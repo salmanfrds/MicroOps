@@ -100,7 +100,7 @@ const getRoleBadgeColor = (role) => {
         </div>
       </div>
 
-      <button class="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 hover:border-[#4DB6AC] hover:text-[#4DB6AC] hover:bg-teal-50 transition-all duration-300 min-h-[240px]">
+      <button class="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 hover:border-[#4DB6AC] hover:text-[#4DB6AC] hover:bg-teal-50 transition-all duration-300 min-h-60">
         <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-white">
            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
         </div>
