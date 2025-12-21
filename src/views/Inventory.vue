@@ -31,14 +31,20 @@ const inventoryItems = ref([
 
 <template>
   <section>
-    <header class="mb-8 flex justify-between items-center">
+    <header class="mb-8">
       <div>
         <h2 class="text-3xl font-bold text-gray-800">Inventory Management</h2>
         <p class="mt-2 text-gray-600">Keep track of your product and material stock levels.</p>
       </div>
-      <button class="bg-[#4DB6AC] text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-[#26A69A] transition-colors">
-        Add Product
-      </button>
+      
+      <div class="mt-5">
+        <button class="bg-[#4DB6AC] text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+          </svg>
+          Add Product
+        </button>
+      </div>
     </header>
 
     <div class="bg-white p-6 rounded-lg shadow-sm overflow-x-auto">

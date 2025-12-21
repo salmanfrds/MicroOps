@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import Sidebar from './components/Sidebar.vue';
+import Header from './components/Header.vue';
 
 const isSidebarExpanded = ref(true)
 
@@ -11,6 +12,7 @@ const toggleSidebar = () => {
 
 <template>
   <div class="flex h-screen bg-[#F8F7F4] text-[#5A5A5A]">
+    <Header />
     <Sidebar :isExpanded="isSidebarExpanded" @toggle="toggleSidebar" />
 
     <main class="flex-1 overflow-y-auto transition-all duration-300">
