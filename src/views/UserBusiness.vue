@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 
 // Mock Data matching your ERD structure (Business + Role)
 const businesses = ref([
@@ -39,6 +39,50 @@ const getRoleBadgeColor = (role) => {
   if (role === 'Owner') return 'bg-[#004D40] text-white'
   return 'bg-gray-100 text-gray-600'
 }
+
+// --- MODAL LOGIC ---
+const isModalOpen = ref(false)
+const newBusinessForm = reactive({
+  name: '',
+  category: '',
+  address: ''
+})
+
+// Mock Categories for dropdown
+const categories = ['Retail', 'Food & Beverage', 'IT Services', 'Consulting', 'Manufacturing', 'Other']
+
+const openModal = () => {
+  // Reset form on open
+  Object.assign(newBusinessForm, { name: '', category: '', address: '' })
+  isModalOpen.value = true
+}
+
+const closeModal = () => {
+  isModalOpen.value = false
+}
+
+// Mock Submit Function
+const registerBusiness = () => {
+  // Basic validation mockup
+  if (!newBusinessForm.name || !newBusinessForm.category) {
+    alert("Please fill in required fields")
+    return
+  }
+
+  // Add mock data to list
+  businesses.value.push({
+    id: businesses.value.length + 1,
+    name: newBusinessForm.name,
+    role: 'Owner', // Creator is usually owner
+    category: newBusinessForm.category,
+    address: newBusinessForm.address || 'N/A',
+    status: 'Active',
+    logoBg: 'bg-purple-100', // Random mock color
+    logoColor: 'text-purple-800'
+  })
+
+  closeModal()
+}
 </script>
 
 <template>
@@ -50,7 +94,10 @@ const getRoleBadgeColor = (role) => {
       </div>
       
       <div class="mt-5">
-        <button class="bg-[#4DB6AC] text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2">
+        <button 
+          @click="openModal"
+          class="bg-[#4DB6AC] text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
@@ -100,13 +147,77 @@ const getRoleBadgeColor = (role) => {
         </div>
       </div>
 
-      <button class="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 hover:border-[#4DB6AC] hover:text-[#4DB6AC] hover:bg-teal-50 transition-all duration-300 min-h-60">
+      <button 
+        @click="openModal"
+        class="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 hover:border-[#4DB6AC] hover:text-[#4DB6AC] hover:bg-teal-50 transition-all duration-300 min-h-60"
+      >
         <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-white">
            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
         </div>
         <span class="font-semibold">Join or Register Business</span>
       </button>
-
     </div>
+
+    <Teleport to="body">
+      <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="closeModal" class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"></div>
+
+        <div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+            
+            <div class="p-6 border-b bg-gray-50 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-gray-800">Register New Business</h3>
+                <button @click="closeModal" class="text-gray-400 hover:text-gray-600 font-bold text-2xl">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-5">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Business Name <span class="text-red-500">*</span></label>
+                    <input 
+                        v-model="newBusinessForm.name" 
+                        type="text" 
+                        placeholder="e.g. Stellar Cafe" 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Business Category <span class="text-red-500">*</span></label>
+                    <select 
+                      v-model="newBusinessForm.category"
+                      class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none bg-white"
+                    >
+                        <option value="" disabled selected>Select Category</option>
+                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Location / Address</label>
+                    <textarea 
+                        v-model="newBusinessForm.address" 
+                        rows="3" 
+                        placeholder="Enter main operating address" 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none resize-none"
+                    ></textarea>
+                </div>
+
+                <div class="pt-4 flex gap-3">
+                    <button 
+                        @click="closeModal" 
+                        class="flex-1 py-3 px-4 rounded-lg text-gray-500 font-bold hover:bg-gray-100 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        @click="registerBusiness" 
+                        class="flex-1 py-3 px-4 rounded-lg bg-[#4DB6AC] text-white font-bold shadow-lg hover:bg-[#26A69A] transition-colors"
+                    >
+                        Create Business
+                    </button>
+                </div>
+            </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
