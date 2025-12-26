@@ -2,6 +2,7 @@
 import { ref, reactive } from 'vue'
 
 // Mock Data matching your ERD structure (Business + Role)
+// UPDATED: Added dark mode classes for logo backgrounds and text
 const businesses = ref([
   { 
     id: 1, 
@@ -10,8 +11,8 @@ const businesses = ref([
     category: 'Retail',
     address: 'Level 12, Menara Tech, KL',
     status: 'Active',
-    logoBg: 'bg-teal-100',
-    logoColor: 'text-teal-800'
+    logoBg: 'bg-teal-100 dark:bg-teal-900/30',
+    logoColor: 'text-teal-800 dark:text-teal-300'
   },
   { 
     id: 2, 
@@ -20,8 +21,8 @@ const businesses = ref([
     category: 'Food & Beverage',
     address: '88 Jalan Kopi, Bandung',
     status: 'Active',
-    logoBg: 'bg-orange-100',
-    logoColor: 'text-orange-800'
+    logoBg: 'bg-orange-100 dark:bg-orange-900/30',
+    logoColor: 'text-orange-800 dark:text-orange-300'
   },
   { 
     id: 3, 
@@ -30,14 +31,15 @@ const businesses = ref([
     category: 'IT Services',
     address: 'Remote',
     status: 'Pending',
-    logoBg: 'bg-blue-100',
-    logoColor: 'text-blue-800'
+    logoBg: 'bg-blue-100 dark:bg-blue-900/30',
+    logoColor: 'text-blue-800 dark:text-blue-300'
   }
 ])
 
+// UPDATED: Dark mode classes for role badges
 const getRoleBadgeColor = (role) => {
-  if (role === 'Owner') return 'bg-[#004D40] text-white'
-  return 'bg-gray-100 text-gray-600'
+  if (role === 'Owner') return 'bg-[#004D40] dark:bg-teal-600 text-white'
+  return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
 }
 
 // --- MODAL LOGIC ---
@@ -52,7 +54,6 @@ const newBusinessForm = reactive({
 const categories = ['Retail', 'Food & Beverage', 'IT Services', 'Consulting', 'Manufacturing', 'Other']
 
 const openModal = () => {
-  // Reset form on open
   Object.assign(newBusinessForm, { name: '', category: '', address: '' })
   isModalOpen.value = true
 }
@@ -63,22 +64,20 @@ const closeModal = () => {
 
 // Mock Submit Function
 const registerBusiness = () => {
-  // Basic validation mockup
   if (!newBusinessForm.name || !newBusinessForm.category) {
     alert("Please fill in required fields")
     return
   }
 
-  // Add mock data to list
   businesses.value.push({
     id: businesses.value.length + 1,
     name: newBusinessForm.name,
-    role: 'Owner', // Creator is usually owner
+    role: 'Owner', 
     category: newBusinessForm.category,
     address: newBusinessForm.address || 'N/A',
     status: 'Active',
-    logoBg: 'bg-purple-100', // Random mock color
-    logoColor: 'text-purple-800'
+    logoBg: 'bg-purple-100 dark:bg-purple-900/30', 
+    logoColor: 'text-purple-800 dark:text-purple-300'
   })
 
   closeModal()
@@ -89,8 +88,8 @@ const registerBusiness = () => {
   <section>
     <header class="mb-8">
       <div>
-        <h2 class="text-3xl font-bold text-gray-800">My Businesses</h2>
-        <p class="mt-2 text-gray-600">Select a business profile to manage or view its dashboard.</p>
+        <h2 class="text-3xl font-bold text-gray-800 dark:text-white">My Businesses</h2>
+        <p class="mt-2 text-gray-600 dark:text-gray-400">Select a business profile to manage or view its dashboard.</p>
       </div>
       
       <div class="mt-5">
@@ -111,36 +110,39 @@ const registerBusiness = () => {
       <div 
         v-for="biz in businesses" 
         :key="biz.id" 
-        class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-all duration-300 group cursor-pointer relative overflow-hidden"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 p-6 hover:shadow-md transition-all duration-300 group cursor-pointer relative overflow-hidden"
       >
         <div class="flex justify-between items-start mb-4">
           <div :class="['w-12 h-12 rounded-lg flex items-center justify-center text-xl font-bold', biz.logoBg, biz.logoColor]">
             {{ biz.name.charAt(0) }}
           </div>
           <span 
-            :class="['text-xs font-semibold px-2 py-1 rounded-full', biz.status === 'Active' ? 'text-green-700 bg-green-50' : 'text-yellow-700 bg-yellow-50']"
+            :class="[
+              'text-xs font-semibold px-2 py-1 rounded-full', 
+              biz.status === 'Active' ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30' : 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30'
+            ]"
           >
             {{ biz.status }}
           </span>
         </div>
 
         <div>
-          <h3 class="text-xl font-bold text-gray-800 group-hover:text-[#004D40] transition-colors mb-1">
+          <h3 class="text-xl font-bold text-gray-800 dark:text-white group-hover:text-[#004D40] dark:group-hover:text-teal-400 transition-colors mb-1">
             {{ biz.name }}
           </h3>
-          <p class="text-sm text-gray-500 mb-4">{{ biz.category }}</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ biz.category }}</p>
           
-          <div class="flex items-center gap-2 text-sm text-gray-600 mb-6">
+          <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             <span class="truncate">{{ biz.address }}</span>
           </div>
         </div>
 
-        <div class="pt-4 border-t border-gray-50 flex items-center justify-between">
+        <div class="pt-4 border-t border-gray-50 dark:border-gray-700 flex items-center justify-between">
           <span :class="['text-xs px-3 py-1 rounded-full font-medium', getRoleBadgeColor(biz.role)]">
             {{ biz.role }}
           </span>
-          <button class="text-[#004D40] font-semibold text-sm hover:underline flex items-center gap-1">
+          <button class="text-[#004D40] dark:text-teal-400 font-semibold text-sm hover:underline flex items-center gap-1">
             Manage
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
           </button>
@@ -149,9 +151,9 @@ const registerBusiness = () => {
 
       <button 
         @click="openModal"
-        class="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 hover:border-[#4DB6AC] hover:text-[#4DB6AC] hover:bg-teal-50 transition-all duration-300 min-h-60"
+        class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:border-[#4DB6AC] dark:hover:border-teal-400 hover:text-[#4DB6AC] dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/10 transition-all duration-300 min-h-60 group"
       >
-        <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-white">
+        <div class="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4 group-hover:bg-white dark:group-hover:bg-gray-700 transition-colors">
            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
         </div>
         <span class="font-semibold">Join or Register Business</span>
@@ -160,31 +162,31 @@ const registerBusiness = () => {
 
     <Teleport to="body">
       <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div @click="closeModal" class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"></div>
+        <div @click="closeModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
 
-        <div class="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-2xl overflow-hidden transform transition-all">
             
-            <div class="p-6 border-b bg-gray-50 flex justify-between items-center">
-                <h3 class="text-xl font-bold text-gray-800">Register New Business</h3>
-                <button @click="closeModal" class="text-gray-400 hover:text-gray-600 font-bold text-2xl">&times;</button>
+            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-gray-800 dark:text-white">Register New Business</h3>
+                <button @click="closeModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-bold text-2xl">&times;</button>
             </div>
 
             <div class="p-6 space-y-5">
                 <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Business Name <span class="text-red-500">*</span></label>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Business Name <span class="text-red-500">*</span></label>
                     <input 
                         v-model="newBusinessForm.name" 
                         type="text" 
                         placeholder="e.g. Stellar Cafe" 
-                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none"
+                        class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-800 dark:text-white"
                     >
                 </div>
 
                 <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Business Category <span class="text-red-500">*</span></label>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Business Category <span class="text-red-500">*</span></label>
                     <select 
                       v-model="newBusinessForm.category"
-                      class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none bg-white"
+                      class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-800 dark:text-white"
                     >
                         <option value="" disabled selected>Select Category</option>
                         <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
@@ -192,19 +194,19 @@ const registerBusiness = () => {
                 </div>
 
                 <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Location / Address</label>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Location / Address</label>
                     <textarea 
                         v-model="newBusinessForm.address" 
                         rows="3" 
                         placeholder="Enter main operating address" 
-                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none resize-none"
+                        class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none resize-none text-gray-800 dark:text-white"
                     ></textarea>
                 </div>
 
                 <div class="pt-4 flex gap-3">
                     <button 
                         @click="closeModal" 
-                        class="flex-1 py-3 px-4 rounded-lg text-gray-500 font-bold hover:bg-gray-100 transition-colors"
+                        class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                     >
                         Cancel
                     </button>
