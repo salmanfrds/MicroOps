@@ -11,11 +11,11 @@ const toggleSidebar = () => {
 }
 
 const route = useRoute()
-const isLayoutHidden = computed(() => route.meta.hideLayout === true)
+const requireAuth = computed(() => route.meta.requireAuth === true)
 </script>
 
 <template>
-  <div v-if="!isLayoutHidden" class="flex h-screen bg-[#F8F7F4] dark:bg-gray-900 text-[#5A5A5A] dark:text-gray-100 transition-colors duration-300">
+  <div v-if="requireAuth" class="flex h-screen bg-[#F8F7F4] dark:bg-gray-900 text-[#5A5A5A] dark:text-gray-100 transition-colors duration-300">
     <Header />
     <Sidebar :isExpanded="isSidebarExpanded" @toggle="toggleSidebar" />
 

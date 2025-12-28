@@ -1,14 +1,15 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useAuth } from '../composables/useAuth.js'
 
-const router = useRouter()
+const { login, loading, error } = useAuth()
+
 const email = ref('')
 const password = ref('')
 
-const handleLogin = () => {
-  // Add auth logic here
-  router.push('/')
+const handleLogin = async () => {
+  const success = await login(email.value, password.value)
+  success ? console.log('Login successful') : console.log('Login failed')
 }
 </script>
 
@@ -22,6 +23,11 @@ const handleLogin = () => {
       </div>
 
       <form @submit.prevent="handleLogin" class="space-y-6">
+
+        <div v-if="error" class="bg-red-100 text-red-600 p-3 rounded">
+      {{ error }}
+    </div>
+
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
           <input 
@@ -51,7 +57,7 @@ const handleLogin = () => {
           type="submit" 
           class="w-full bg-[#004D40] dark:bg-teal-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-[#003d33] dark:hover:bg-teal-500 transition-all transform hover:scale-[1.01]"
         >
-          Sign In
+          {{ loading ? 'Logging in...' : 'Login' }}
         </button>
       </form>
 
