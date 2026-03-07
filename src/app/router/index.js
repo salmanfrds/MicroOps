@@ -52,7 +52,7 @@ const routes = [
         path: '/products',
         name: 'Products',
         component: Products,
-        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager', 'Cashier'] }
     },
     {
         path: '/customer',
