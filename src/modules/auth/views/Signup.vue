@@ -10,6 +10,7 @@ const fullName = ref('')
 const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const pin = ref('') // New PIN field
 
 // 3. Handle Form Submission
 const handleSignup = async () => {
@@ -27,8 +28,13 @@ const handleSignup = async () => {
     return
   }
 
+  if (pin.value.length !== 4 || !/^\d+$/.test(pin.value)) {
+    error.value = "PIN must be exactly 4 digits."
+    return
+  }
+
   // Call the signup action from useAuth
-  await signup(email.value, password.value, fullName.value)
+  await signup(email.value, password.value, fullName.value, pin.value)
 }
 </script>
 
@@ -38,20 +44,20 @@ const handleSignup = async () => {
     <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 transition-all duration-300 border border-transparent dark:border-gray-700">
       <div class="text-center mb-8">
         <h1 class="text-3xl font-bold text-[#004D40] dark:text-teal-400 mb-2">MicroOps</h1>
-        <p class="text-gray-500 dark:text-gray-400">Create your account to get started</p>
+        <p class="text-gray-500 dark:text-gray-400">Create your business account to get started</p>
       </div>
 
       <div v-if="error" class="mb-5 p-3 rounded-lg bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
         </svg>
         <span>{{ error }}</span>
       </div>
 
-      <form @submit.prevent="handleSignup" class="space-y-5">
+      <form @submit.prevent="handleSignup" class="space-y-4">
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Your Name (Owner)</label>
           <input 
             v-model="fullName" 
             type="text" 
@@ -63,7 +69,7 @@ const handleSignup = async () => {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Business Email</label>
           <input 
             v-model="email" 
             type="email" 
@@ -74,25 +80,43 @@ const handleSignup = async () => {
           >
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-          <input 
-            v-model="password" 
-            type="password" 
-            placeholder="Min 6 characters"
-            class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-            required
-            :disabled="loading"
-          >
-        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account Password</label>
+            <input 
+              v-model="password" 
+              type="password" 
+              placeholder="Min 6 characters"
+              class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              required
+              :disabled="loading"
+            >
+          </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
-          <input 
-            v-model="confirmPassword" 
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
+            <input 
+              v-model="confirmPassword" 
+              type="password" 
+              placeholder="Confirm"
+              class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              required
+              :disabled="loading"
+            >
+          </div>
+        </div>
+        
+        <div class="pt-2 border-t border-gray-100 dark:border-gray-700 mt-2">
+           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Profile PIN (4 Digits)</label>
+           <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">This securely locks your Owner profile on the device.</p>
+           <input 
+            v-model="pin" 
             type="password" 
-            placeholder="Confirm your password"
-            class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="4"
+            placeholder="e.g. 1234"
+            class="w-full md:w-1/2 p-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-center tracking-[0.5em] font-bold text-xl"
             required
             :disabled="loading"
           >
@@ -104,7 +128,7 @@ const handleSignup = async () => {
           class="w-full bg-[#004D40] dark:bg-teal-600 text-white font-bold py-3 px-4 rounded-lg shadow 
                  hover:bg-[#003d33] dark:hover:bg-teal-500 
                  disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
-                 transition-all transform hover:scale-[1.01] mt-2 flex justify-center items-center"
+                 transition-all transform hover:scale-[1.01] mt-4 flex justify-center items-center"
         >
           <span v-if="loading" class="flex items-center gap-2">
             <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

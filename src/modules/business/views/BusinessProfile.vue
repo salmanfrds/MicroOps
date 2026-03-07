@@ -1,12 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore'
+import { getAuth } from 'firebase/auth'
+import { firebaseApp } from '../../../shared/lib/firebaseClient'
+
+const auth = getAuth(firebaseApp)
+const db = getFirestore(firebaseApp)
 
 const business = ref({
   name: 'MicroOps Enterprises',
   address: 'UIA Gombak',
   phone: '+60 11-2345 6789',
   website: 'www.microops.com',
-  address: 'Level 12, Menara Tech, Jalan Tun Razak',
   city: 'Kuala Lumpur',
   zip: '50400',
   bankName: '',
@@ -14,16 +19,85 @@ const business = ref({
   duitnowId: ''
 })
 
-const staff = ref([
-  { id: 1, name: 'Salman Firdaus', email: 'salman@microops.com', role: 'Owner', status: 'Active' },
-  { id: 2, name: 'Ahmad Zaki', email: 'zaki@microops.com', role: 'Cashier', status: 'Active' },
-  { id: 3, name: 'Siti Aminah', email: 'siti@microops.com', role: 'Inventory Manager', status: 'Inactive' },
-])
-
+const staff = ref([])
 const roles = ['Owner', 'Manager', 'Cashier', 'Inventory Manager']
 
+// Modal State
+const isAddStaffModalOpen = ref(false)
+const newStaff = ref({
+  full_name: '',
+  role: 'Cashier',
+  pin: ''
+})
+
+const fetchStaff = async () => {
+  if (!auth.currentUser) return
+  
+  try {
+    const profilesRef = collection(db, `businesses/${auth.currentUser.uid}/profiles`)
+    const snapshot = await getDocs(profilesRef)
+    staff.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+  } catch (err) {
+    console.error("Error fetching staff:", err)
+  }
+}
+
+onMounted(() => {
+  fetchStaff()
+})
+
+const openAddStaffModal = () => {
+  newStaff.value = { full_name: '', role: 'Cashier', pin: '' }
+  isAddStaffModalOpen.value = true
+}
+
+const handleAddStaff = async () => {
+  if (!newStaff.value.full_name || newStaff.value.pin.length !== 4) {
+    alert("Please provide a name and a 4-digit PIN")
+    return
+  }
+
+  try {
+    // Generate a random ID for the staff member
+    const profileId = `staff_${Date.now()}`
+    const profileRef = doc(db, `businesses/${auth.currentUser.uid}/profiles`, profileId)
+    
+    await setDoc(profileRef, {
+      full_name: newStaff.value.full_name,
+      role: newStaff.value.role,
+      pin: newStaff.value.pin,
+      created_at: new Date().toISOString()
+    })
+
+    // Refresh list
+    await fetchStaff()
+    isAddStaffModalOpen.value = false
+  } catch (err) {
+    console.error("Error adding staff:", err)
+    alert("Failed to add staff member")
+  }
+}
+
+const deleteStaff = async (profileId) => {
+  if (profileId === 'owner') {
+    alert("Cannot delete the Owner account.")
+    return
+  }
+
+  if (confirm("Are you sure you want to remove this profile?")) {
+    try {
+      await deleteDoc(doc(db, `businesses/${auth.currentUser.uid}/profiles`, profileId))
+      await fetchStaff()
+    } catch (err) {
+      console.error("Error deleting staff:", err)
+    }
+  }
+}
+
 const handleFileUpload = (event) => {
-  // Logic for handling DuitNow QR upload
   console.log('QR Uploaded:', event.target.files[0])
 }
 </script>
@@ -118,41 +192,56 @@ const handleFileUpload = (event) => {
       </div>
     </div>
 
+    <!-- STAFF MANAGEMENT SECTION -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
       <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Staff Management</h3>
-        <button class="text-sm bg-[#4DB6AC] text-white px-4 py-2 rounded-lg hover:bg-[#26A69A] transition-colors">+ Add New Staff</button>
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Staff Management (Profiles)</h3>
+        <button 
+          @click="openAddStaffModal"
+          class="text-sm bg-[#4DB6AC] text-white px-4 py-2 rounded-lg hover:bg-[#26A69A] transition-colors"
+        >
+          + Add New Staff
+        </button>
       </div>
       <table class="w-full text-left">
         <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase text-gray-500 dark:text-gray-400 font-bold">
           <tr>
-            <th class="px-6 py-4">Name & Email</th>
+            <th class="px-6 py-4">Name</th>
             <th class="px-6 py-4">Role</th>
             <th class="px-6 py-4">Status</th>
             <th class="px-6 py-4 text-right">Action</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          <tr v-if="staff.length === 0">
+            <td colspan="4" class="px-6 py-8 text-center text-gray-500">Loading profiles...</td>
+          </tr>
           <tr v-for="user in staff" :key="user.id" class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
             <td class="px-6 py-4">
-              <div class="font-semibold text-gray-800 dark:text-white">{{ user.name }}</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.email }}</div>
+              <div class="font-semibold text-gray-800 dark:text-white flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-800 text-xs font-bold">
+                  {{ user.full_name ? user.full_name.charAt(0).toUpperCase() : 'U' }}
+                </div>
+                {{ user.full_name }}
+              </div>
             </td>
             <td class="px-6 py-4">
-              <select v-model="user.role" class="text-sm border-none bg-transparent focus:ring-0 text-gray-700 dark:text-gray-300 font-medium cursor-pointer">
-                <option v-for="role in roles" :key="role" :value="role" class="dark:bg-gray-800">{{ role }}</option>
-              </select>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ user.role }}</span>
             </td>
             <td class="px-6 py-4">
               <span 
-                :class="user.status === 'Active' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'" 
-                class="px-2 py-1 rounded-full text-[10px] font-bold uppercase"
+                class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full text-[10px] font-bold uppercase"
               >
-                {{ user.status }}
+                Active
               </span>
             </td>
             <td class="px-6 py-4 text-right">
-              <button class="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 mr-2 transition-colors">
+              <button 
+                v-if="user.id !== 'owner'"
+                @click="deleteStaff(user.id)"
+                class="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 mr-2 transition-colors tooltip"
+                title="Remove Profile"
+              >
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </td>
@@ -161,10 +250,49 @@ const handleFileUpload = (event) => {
       </table>
     </div>
 
+    <!-- Add Staff Modal -->
+    <Teleport to="body">
+      <div v-if="isAddStaffModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-xl overflow-hidden animate-fade-in-up">
+          <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+            <h3 class="text-xl font-bold text-gray-800 dark:text-white">Create Staff Profile</h3>
+            <button @click="isAddStaffModalOpen = false" class="text-gray-400 hover:text-gray-800">&times;</button>
+          </div>
+          <div class="p-6 space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Staff Name</label>
+              <input v-model="newStaff.full_name" type="text" class="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-[#4DB6AC] outline-none" placeholder="e.g. Alice">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+              <select v-model="newStaff.role" class="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-[#4DB6AC] outline-none">
+                <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Login PIN (4 Digits)</label>
+              <input v-model="newStaff.pin" type="text" inputmode="numeric" maxlength="4" class="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-[#4DB6AC] outline-none tracking-widest text-center text-xl font-bold" placeholder="1234">
+            </div>
+            <button @click="handleAddStaff" class="w-full mt-4 bg-[#4DB6AC] text-white font-bold py-2 rounded-lg hover:bg-[#26A69A]">Add Staff Profile</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <div class="mt-8 flex justify-end">
       <button class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 px-10 rounded-lg shadow-lg hover:shadow-xl hover:bg-[#003d33] dark:hover:bg-teal-600 transition-all active:scale-95">
-        Save All Changes
+        Save Details
       </button>
     </div>
   </section>
 </template>
+
+<style scoped>
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.2s ease-out forwards;
+}
+</style>

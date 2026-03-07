@@ -235,7 +235,7 @@ const countItems = (items) => items.reduce((acc, i) => acc + i.qty, 0)
                       class="w-7 h-full flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors text-gray-500 dark:text-gray-400 border-r dark:border-gray-600 disabled:opacity-50">
                       <span class="font-bold text-sm">−</span>
                     </button>
-                    <div class="px-2 min-w-[30px] text-center text-sm font-bold text-gray-700 dark:text-gray-200 select-none">
+                    <div class="px-2 min-w-7.5 text-center text-sm font-bold text-gray-700 dark:text-gray-200 select-none">
                       {{ item.qty }}
                     </div>
                     <button @click.stop="item.qty < item.stock ? item.qty++ : null"
@@ -245,7 +245,7 @@ const countItems = (items) => items.reduce((acc, i) => acc + i.qty, 0)
                     </button>
                   </div>
 
-                  <div class="text-right min-w-[70px]">
+                  <div class="text-right min-w-17.5">
                     <span :class="item.statusClass"
                       class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block mb-1">
                       {{ item.status }}

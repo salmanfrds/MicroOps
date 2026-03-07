@@ -1,7 +1,7 @@
 <script setup>
 import { ref,computed } from 'vue';
-import Sidebar from './components/Sidebar.vue';
-import Header from './components/Header.vue';
+import Sidebar from './shared/components/Sidebar.vue';
+import Header from './shared/components/Header.vue';
 import { useRoute } from 'vue-router';
 
 const isSidebarExpanded = ref(true)
@@ -12,10 +12,11 @@ const toggleSidebar = () => {
 
 const route = useRoute()
 const requireAuth = computed(() => route.meta.requireAuth === true)
+const hideNavigation = computed(() => route.meta.hideNavigation === true)
 </script>
 
 <template>
-  <div v-if="requireAuth" class="flex h-screen bg-[#F8F7F4] dark:bg-gray-900 text-[#5A5A5A] dark:text-gray-100 transition-colors duration-300">
+  <div v-if="requireAuth && !hideNavigation" class="flex h-screen bg-[#F8F7F4] dark:bg-gray-900 text-[#5A5A5A] dark:text-gray-100 transition-colors duration-300">
     <Header />
     <Sidebar :isExpanded="isSidebarExpanded" @toggle="toggleSidebar" />
 
