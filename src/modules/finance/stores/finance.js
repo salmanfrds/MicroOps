@@ -1,0 +1,128 @@
+import { defineStore } from 'pinia'
+import { computed } from 'vue'
+import { collection, addDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { useCollection } from 'vuefire'
+import { db } from '../../../shared/lib/firebaseClient'
+import { useAuthStore } from '../../auth/stores/auth'
+import { useSalesStore } from '../../sales/stores/sales'
+import { useInventoryStore } from '../../inventory/stores/inventory'
+
+export const useFinanceStore = defineStore('finance', () => {
+    const authStore = useAuthStore()
+    const salesStore = useSalesStore()
+    const inventoryStore = useInventoryStore()
+
+    // Manual ledger entries (custom income/expenses)
+    const ledgerRef = computed(() => {
+        const bizId = authStore.user?.businessId
+        return bizId ? collection(db, `businesses/${bizId}/ledger`) : null
+    })
+    const ledgerEntries = useCollection(ledgerRef)
+
+    const toSortTime = (entry) => {
+        if (entry.createdAt?.toDate) return entry.createdAt.toDate().getTime()
+        if (entry.date) return new Date(entry.date).getTime()
+        return 0
+    }
+
+    const tsToDateStr = (ts) => {
+        if (!ts) return ''
+        const d = ts.toDate ? ts.toDate() : new Date(ts)
+        return d.toISOString().split('T')[0]
+    }
+
+    // --- AUTO-DERIVED INCOME: paid sales orders ---
+    const salesIncome = computed(() =>
+        salesStore.orders
+            .filter(o => o.paymentStatus === 'Paid')
+            .map(o => ({
+                id: `sale-${o.id}`,
+                type: 'income',
+                category: 'Product Sales',
+                remarks: `${o.orderNumber || ''}${o.customerName ? ' · ' + o.customerName : ''}`,
+                amount: o.total || 0,
+                date: tsToDateStr(o.createdAt),
+                origin: 'sale',
+                readonly: true,
+                createdAt: o.createdAt
+            }))
+    )
+
+    // --- AUTO-DERIVED EXPENSE: stock-in procurement with cost > 0 ---
+    const stockExpenses = computed(() =>
+        inventoryStore.transactions
+            .filter(tx => tx.type === 'IN' && (tx.total || 0) > 0)
+            .map(tx => ({
+                id: `stock-${tx.id}`,
+                type: 'expense',
+                category: 'Procurement',
+                remarks: tx.remark || 'Stock procurement',
+                amount: tx.total || 0,
+                date: tx.date || tsToDateStr(tx.createdAt),
+                origin: 'stock_in',
+                readonly: true,
+                createdAt: tx.createdAt
+            }))
+    )
+
+    // --- MANUAL ENTRIES from ledger ---
+    const manualIncome = computed(() =>
+        ledgerEntries.value
+            .filter(e => e.type === 'income')
+            .map(e => ({ ...e, id: e.id, origin: 'manual', readonly: false }))
+    )
+
+    const manualExpenses = computed(() =>
+        ledgerEntries.value
+            .filter(e => e.type === 'expense')
+            .map(e => ({ ...e, id: e.id, origin: 'manual', readonly: false }))
+    )
+
+    // --- MERGED & SORTED ---
+    const allIncome = computed(() =>
+        [...salesIncome.value, ...manualIncome.value]
+            .sort((a, b) => toSortTime(b) - toSortTime(a))
+    )
+
+    const allExpenses = computed(() =>
+        [...stockExpenses.value, ...manualExpenses.value]
+            .sort((a, b) => toSortTime(b) - toSortTime(a))
+    )
+
+    const totalIncome = computed(() => allIncome.value.reduce((acc, e) => acc + (e.amount || 0), 0))
+    const totalExpenses = computed(() => allExpenses.value.reduce((acc, e) => acc + (e.amount || 0), 0))
+    const totalBalance = computed(() => totalIncome.value - totalExpenses.value)
+
+    const getBizId = () => {
+        const bizId = authStore.user?.businessId
+        if (!bizId) throw new Error('No active business session')
+        return bizId
+    }
+
+    const addLedgerEntry = async ({ type, category, remarks, amount, date }) => {
+        const bizId = getBizId()
+        await addDoc(collection(db, `businesses/${bizId}/ledger`), {
+            type,
+            category,
+            remarks: remarks || '',
+            amount: Number(amount),
+            date,
+            createdAt: serverTimestamp()
+        })
+    }
+
+    const deleteLedgerEntry = async (entryId) => {
+        const bizId = getBizId()
+        await deleteDoc(doc(db, `businesses/${bizId}/ledger`, entryId))
+    }
+
+    return {
+        allIncome,
+        allExpenses,
+        totalIncome,
+        totalExpenses,
+        totalBalance,
+        addLedgerEntry,
+        deleteLedgerEntry
+    }
+})
