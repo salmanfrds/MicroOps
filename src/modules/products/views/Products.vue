@@ -98,12 +98,19 @@ const handleAddProduct = async () => {
     }
 
     const tid = toastStore.loading('Adding product...')
+    let success = false
     try {
         await productsStore.addProduct(addForm.value)
-        toastStore.replace(tid, 'success', 'Product added successfully')
-        closeAddModal()
+        success = true
     } catch (err) {
-        toastStore.replace(tid, 'error', 'Failed to add product. Please try again.')
+        console.error('Add product error:', err)
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Product added successfully')
+            closeAddModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to add product. Please try again.')
+        }
     }
 }
 
@@ -117,12 +124,19 @@ const handleUpdateProduct = async () => {
 
     const updates = { ...editForm.value, price: Number(editForm.value.price) || 0 }
     const tid = toastStore.loading('Saving changes...')
+    let success = false
     try {
         await productsStore.updateProduct(editId.value, updates)
-        toastStore.replace(tid, 'success', 'Product updated successfully')
-        closeEditModal()
+        success = true
     } catch (err) {
-        toastStore.replace(tid, 'error', 'Failed to update product. Please try again.')
+        console.error('Update product error:', err)
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Product updated successfully')
+            closeEditModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to update product. Please try again.')
+        }
     }
 }
 
@@ -130,12 +144,19 @@ const handleDelete = async () => {
     if (!editId.value) return
     if (confirm('Are you sure you want to delete this product?')) {
         const tid = toastStore.loading('Deleting product...')
+        let success = false
         try {
             await productsStore.deleteProduct(editId.value)
-            toastStore.replace(tid, 'success', 'Product deleted')
-            closeEditModal()
+            success = true
         } catch (err) {
-            toastStore.replace(tid, 'error', 'Failed to delete product. Please try again.')
+            console.error('Delete product error:', err)
+        } finally {
+            if (success) {
+                toastStore.replace(tid, 'success', 'Product deleted')
+                closeEditModal()
+            } else {
+                toastStore.replace(tid, 'error', 'Failed to delete product. Please try again.')
+            }
         }
     }
 }

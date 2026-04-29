@@ -158,6 +158,7 @@ const confirmPayment = async () => {
   if (isSubmitting.value) return
   isSubmitting.value = true
   const tid = toastStore.loading('Processing order...')
+  let success = false
   try {
     await salesStore.createOrder({
       customerName: selectedCustomer.value?.full_name || selectedCustomer.value?.name || 'Walk-in Customer',
@@ -165,13 +166,17 @@ const confirmPayment = async () => {
       items: cartItems.value,
       paymentMethod: selectedPaymentMethod.value
     })
-    toastStore.replace(tid, 'success', 'Order created successfully')
-    currentStep.value = 3
+    success = true
   } catch (err) {
     console.error('Failed to create order:', err)
-    toastStore.replace(tid, 'error', 'Failed to process order. Please try again.')
   } finally {
     isSubmitting.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'Order created successfully')
+      currentStep.value = 3
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to process order. Please try again.')
+    }
   }
 }
 

@@ -69,24 +69,38 @@ const closeEditModal = () => {
 const handleAddCustomer = async () => {
     if (!addForm.value.name || !addForm.value.email) return
     const tid = toastStore.loading('Adding customer...')
+    let success = false
     try {
         await customersStore.addCustomer(addForm.value)
-        toastStore.replace(tid, 'success', 'Customer added successfully')
-        closeAddModal()
+        success = true
     } catch (err) {
-        toastStore.replace(tid, 'error', 'Failed to add customer. Please try again.')
+        console.error('Add customer error:', err)
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Customer added successfully')
+            closeAddModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to add customer. Please try again.')
+        }
     }
 }
 
 const handleUpdateCustomer = async () => {
     if (!editId.value || !editForm.value.name || !editForm.value.email) return
     const tid = toastStore.loading('Saving changes...')
+    let success = false
     try {
         await customersStore.updateCustomer(editId.value, editForm.value)
-        toastStore.replace(tid, 'success', 'Customer updated successfully')
-        closeEditModal()
+        success = true
     } catch (err) {
-        toastStore.replace(tid, 'error', 'Failed to update customer. Please try again.')
+        console.error('Update customer error:', err)
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Customer updated successfully')
+            closeEditModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to update customer. Please try again.')
+        }
     }
 }
 
@@ -94,12 +108,19 @@ const handleDeleteCustomer = async () => {
     if (!editId.value) return
     if (confirm('Are you sure you want to delete this profile?')) {
         const tid = toastStore.loading('Deleting customer...')
+        let success = false
         try {
             await customersStore.deleteCustomer(editId.value)
-            toastStore.replace(tid, 'success', 'Customer deleted')
-            closeEditModal()
+            success = true
         } catch (err) {
-            toastStore.replace(tid, 'error', 'Failed to delete customer. Please try again.')
+            console.error('Delete customer error:', err)
+        } finally {
+            if (success) {
+                toastStore.replace(tid, 'success', 'Customer deleted')
+                closeEditModal()
+            } else {
+                toastStore.replace(tid, 'error', 'Failed to delete customer. Please try again.')
+            }
         }
     }
 }

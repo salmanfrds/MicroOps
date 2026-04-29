@@ -23,8 +23,13 @@ export const useToastStore = defineStore('toast', () => {
 
   const replace = (id, type, message) => {
     dismiss(id)
-    return add(type, message)
+    const duration = type === 'error' ? 5000 : 3500
+    return add(type, message, duration)
   }
 
-  return { toasts, success, error, loading, dismiss, replace }
+  const resolveLoading = (id) => {
+    dismiss(id)
+  }
+
+  return { toasts, success, error, loading, dismiss, replace, resolveLoading }
 })

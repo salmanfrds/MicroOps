@@ -48,6 +48,7 @@ watch(() => authStore.user, (newUser) => {
 const updateProfile = async () => {
   loading.value = true
   const tid = toastStore.loading('Saving profile...')
+  let success = false
   try {
     const db = getFirestore(firebaseApp)
     const docRef = doc(db, `businesses/${authStore.user.businessId}/profiles`, authStore.user.profileId)
@@ -56,12 +57,16 @@ const updateProfile = async () => {
       role: profileForm.value.role,
     })
     authStore.setUser({ ...authStore.user, ...profileForm.value })
-    toastStore.replace(tid, 'success', 'Profile updated successfully')
+    success = true
   } catch (error) {
     console.error(error)
-    toastStore.replace(tid, 'error', 'Failed to update profile. Please try again.')
   } finally {
     loading.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'Profile updated successfully')
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to update profile. Please try again.')
+    }
   }
 }
 
@@ -81,6 +86,8 @@ const changePin = async () => {
 
   pinLoading.value = true
   const tid = toastStore.loading('Updating PIN...')
+  let resultType = null
+  let resultMessage = ''
   try {
     const db = getFirestore(firebaseApp)
     const docRef = doc(db, `businesses/${authStore.user.businessId}/profiles`, authStore.user.profileId)
@@ -89,20 +96,25 @@ const changePin = async () => {
 
     if (snap.exists()) {
       if (snap.data().pin !== pinForm.value.current) {
-        toastStore.replace(tid, 'error', 'Current PIN is incorrect.')
-        return
+        resultType = 'error'
+        resultMessage = 'Current PIN is incorrect.'
+      } else {
+        await updateDoc(docRef, { pin: pinForm.value.new })
+        pinForm.value = { current: '', new: '', confirm: '' }
+        resultType = 'success'
+        resultMessage = 'PIN updated successfully'
       }
-      await updateDoc(docRef, { pin: pinForm.value.new })
-      toastStore.replace(tid, 'success', 'PIN updated successfully')
-      pinForm.value = { current: '', new: '', confirm: '' }
     } else {
-      toastStore.replace(tid, 'error', 'Failed to locate profile.')
+      resultType = 'error'
+      resultMessage = 'Failed to locate profile.'
     }
   } catch (error) {
     console.error(error)
-    toastStore.replace(tid, 'error', 'Failed to update PIN. Please try again.')
+    resultType = 'error'
+    resultMessage = 'Failed to update PIN. Please try again.'
   } finally {
     pinLoading.value = false
+    toastStore.replace(tid, resultType || 'error', resultMessage || 'Unknown error')
   }
 }
 </script>

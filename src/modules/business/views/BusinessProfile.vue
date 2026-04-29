@@ -71,6 +71,7 @@ const saveProfile = async () => {
   if (!uid || saving.value) return
   saving.value = true
   const tid = toastStore.loading('Saving business details...')
+  let success = false
   try {
     await setDoc(doc(db, 'businesses', uid), {
       name: business.value.name,
@@ -83,12 +84,16 @@ const saveProfile = async () => {
       logoUrl: business.value.logoUrl,
       duitnowQrUrl: business.value.duitnowQrUrl
     }, { merge: true })
-    toastStore.replace(tid, 'success', 'Business details saved successfully')
+    success = true
   } catch (err) {
     console.error('Error saving profile:', err)
-    toastStore.replace(tid, 'error', 'Failed to save details. Please try again.')
   } finally {
     saving.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'Business details saved successfully')
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to save details. Please try again.')
+    }
   }
 }
 
@@ -125,6 +130,7 @@ const handleLogoUpload = async (event) => {
   if (!uid) return
   logoUploading.value = true
   const tid = toastStore.loading('Uploading logo...')
+  let success = false
   try {
     logoPreview.value = URL.createObjectURL(raw)
     const file = await compressImage(raw, 1024, 0.85)
@@ -132,13 +138,17 @@ const handleLogoUpload = async (event) => {
     business.value.logoUrl = url
     logoPreview.value = url
     await setDoc(doc(db, 'businesses', uid), { logoUrl: url }, { merge: true })
-    toastStore.replace(tid, 'success', 'Logo uploaded successfully')
+    success = true
   } catch (err) {
     console.error('Logo upload failed:', err)
     logoPreview.value = business.value.logoUrl
-    toastStore.replace(tid, 'error', 'Logo upload failed. Please try again.')
   } finally {
     logoUploading.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'Logo uploaded successfully')
+    } else {
+      toastStore.replace(tid, 'error', 'Logo upload failed. Please try again.')
+    }
   }
 }
 
@@ -150,6 +160,7 @@ const handleQrUpload = async (event) => {
   if (!uid) return
   qrUploading.value = true
   const tid = toastStore.loading('Uploading QR code...')
+  let success = false
   try {
     qrPreview.value = URL.createObjectURL(raw)
     const file = await compressImage(raw, 1024, 0.9)
@@ -157,13 +168,17 @@ const handleQrUpload = async (event) => {
     business.value.duitnowQrUrl = url
     qrPreview.value = url
     await setDoc(doc(db, 'businesses', uid), { duitnowQrUrl: url }, { merge: true })
-    toastStore.replace(tid, 'success', 'QR code uploaded successfully')
+    success = true
   } catch (err) {
     console.error('QR upload failed:', err)
     qrPreview.value = business.value.duitnowQrUrl
-    toastStore.replace(tid, 'error', 'QR upload failed. Please try again.')
   } finally {
     qrUploading.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'QR code uploaded successfully')
+    } else {
+      toastStore.replace(tid, 'error', 'QR upload failed. Please try again.')
+    }
   }
 }
 
@@ -191,6 +206,7 @@ const handleAddStaff = async () => {
   }
   const uid = getBizId()
   const tid = toastStore.loading('Creating staff profile...')
+  let success = false
   try {
     const profileId = `staff_${Date.now()}`
     await setDoc(doc(db, `businesses/${uid}/profiles`, profileId), {
@@ -200,11 +216,16 @@ const handleAddStaff = async () => {
       created_at: new Date().toISOString()
     })
     await fetchStaff()
-    toastStore.replace(tid, 'success', 'Staff profile created successfully')
-    isAddStaffModalOpen.value = false
+    success = true
   } catch (err) {
     console.error('Error adding staff:', err)
-    toastStore.replace(tid, 'error', 'Failed to create staff profile. Please try again.')
+  } finally {
+    if (success) {
+      toastStore.replace(tid, 'success', 'Staff profile created successfully')
+      isAddStaffModalOpen.value = false
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to create staff profile. Please try again.')
+    }
   }
 }
 
@@ -216,13 +237,19 @@ const deleteStaff = async (profileId) => {
   if (confirm('Are you sure you want to remove this profile?')) {
     const uid = getBizId()
     const tid = toastStore.loading('Removing staff profile...')
+    let success = false
     try {
       await deleteDoc(doc(db, `businesses/${uid}/profiles`, profileId))
       await fetchStaff()
-      toastStore.replace(tid, 'success', 'Staff profile removed')
+      success = true
     } catch (err) {
       console.error('Error deleting staff:', err)
-      toastStore.replace(tid, 'error', 'Failed to remove staff profile. Please try again.')
+    } finally {
+      if (success) {
+        toastStore.replace(tid, 'success', 'Staff profile removed')
+      } else {
+        toastStore.replace(tid, 'error', 'Failed to remove staff profile. Please try again.')
+      }
     }
   }
 }

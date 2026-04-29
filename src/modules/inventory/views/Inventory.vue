@@ -75,12 +75,19 @@ const closeAddModal = () => {
 const handleAddProduct = async () => {
     if (!addForm.value.name) return
     const tid = toastStore.loading('Adding inventory item...')
+    let success = false
     try {
         await inventoryStore.addInventoryItem(addForm.value)
-        toastStore.replace(tid, 'success', 'Inventory item added successfully')
-        closeAddModal()
+        success = true
     } catch (err) {
-        toastStore.replace(tid, 'error', 'Failed to add item. Please try again.')
+        console.error('Add inventory error:', err)
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Inventory item added successfully')
+            closeAddModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to add item. Please try again.')
+        }
     }
 }
 
@@ -114,6 +121,7 @@ const handleUpdateItem = async () => {
     }
 
     const tid = toastStore.loading('Saving details...')
+    let success = false
     try {
         await inventoryStore.updateInventoryItem(editForm.value.id, payload)
 
@@ -126,12 +134,16 @@ const handleUpdateItem = async () => {
                 stockForm.value.remark || ''
             )
         }
-
-        toastStore.replace(tid, 'success', 'Inventory item saved successfully')
-        closeEditModal()
+        success = true
     } catch (err) {
         console.error('Failed to execute save: ', err)
-        toastStore.replace(tid, 'error', 'Failed to save. Please try again.')
+    } finally {
+        if (success) {
+            toastStore.replace(tid, 'success', 'Inventory item saved successfully')
+            closeEditModal()
+        } else {
+            toastStore.replace(tid, 'error', 'Failed to save. Please try again.')
+        }
     }
 }
 
@@ -139,12 +151,19 @@ const handleDeleteItem = async () => {
     if (!editForm.value.id) return
     if (confirm(`Are you sure you want to completely delete "${editForm.value.name}" from the inventory?\n\nThis will remove the item, but keep historical transactions.`)) {
         const tid = toastStore.loading('Deleting item...')
+        let success = false
         try {
             await inventoryStore.deleteInventoryItem(editForm.value.id)
-            toastStore.replace(tid, 'success', 'Inventory item deleted')
-            closeEditModal()
+            success = true
         } catch (err) {
-            toastStore.replace(tid, 'error', 'Failed to delete item. Please try again.')
+            console.error('Delete inventory error:', err)
+        } finally {
+            if (success) {
+                toastStore.replace(tid, 'success', 'Inventory item deleted')
+                closeEditModal()
+            } else {
+                toastStore.replace(tid, 'error', 'Failed to delete item. Please try again.')
+            }
         }
     }
 }

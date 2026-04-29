@@ -51,6 +51,7 @@ const saveRecord = async () => {
   if (!finalCategory || !form.amount || isSubmitting.value) return
   isSubmitting.value = true
   const tid = toastStore.loading('Saving record...')
+  let success = false
   try {
     await financeStore.addLedgerEntry({
       type: activeModal.value,
@@ -59,24 +60,35 @@ const saveRecord = async () => {
       amount: parseFloat(form.amount),
       date: form.date
     })
-    toastStore.replace(tid, 'success', 'Record saved successfully')
-    closeModal()
+    success = true
   } catch (err) {
     console.error('Failed to save record:', err)
-    toastStore.replace(tid, 'error', 'Failed to save record. Please try again.')
   } finally {
     isSubmitting.value = false
+    if (success) {
+      toastStore.replace(tid, 'success', 'Record saved successfully')
+      closeModal()
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to save record. Please try again.')
+    }
   }
 }
 
 const deleteEntry = async (entry) => {
   if (entry.readonly) return
   const tid = toastStore.loading('Deleting entry...')
+  let success = false
   try {
     await financeStore.deleteLedgerEntry(entry.id)
-    toastStore.replace(tid, 'success', 'Entry deleted')
+    success = true
   } catch (err) {
-    toastStore.replace(tid, 'error', 'Failed to delete entry. Please try again.')
+    console.error('Delete entry error:', err)
+  } finally {
+    if (success) {
+      toastStore.replace(tid, 'success', 'Entry deleted')
+    } else {
+      toastStore.replace(tid, 'error', 'Failed to delete entry. Please try again.')
+    }
   }
 }
 
