@@ -2,6 +2,7 @@
 import { ref,computed } from 'vue';
 import Sidebar from './shared/components/Sidebar.vue';
 import Header from './shared/components/Header.vue';
+import ToastContainer from './shared/components/ToastContainer.vue';
 import { useRoute } from 'vue-router';
 
 const isSidebarExpanded = ref(true)
@@ -30,4 +31,6 @@ const hideNavigation = computed(() => route.meta.hideNavigation === true)
   <div v-else class="h-screen w-full bg-[#F8F7F4] dark:bg-gray-900 transition-colors duration-300">
       <router-view />
   </div>
+
+  <ToastContainer />
 </template>

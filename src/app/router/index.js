@@ -22,7 +22,7 @@ const routes = [
         path: '/',
         name: 'Dashboard',
         component: Dashboard,
-        meta: { requireAuth: true, roles: ['Owner'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Manager'] }
     },
     {
         path: '/select-profile',
@@ -40,19 +40,19 @@ const routes = [
         path: '/finance',
         name: 'Finance',
         component: Finance,
-        meta: { requireAuth: true, roles: ['Owner'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Manager'] }
     },
     {
         path: '/inventory',
         name: 'Inventory',
         component: Inventory,
-        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Manager', 'Inventory Manager'] }
     },
     {
         path: '/products',
         name: 'Products',
         component: Products,
-        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager', 'Cashier'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Manager', 'Inventory Manager', 'Cashier'] }
     },
     {
         path: '/customer',

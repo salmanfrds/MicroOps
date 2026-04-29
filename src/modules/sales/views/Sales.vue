@@ -5,6 +5,7 @@ import { useProductsStore } from '../../products/stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
 import { useCustomersStore } from '../../customer/stores/customers'
 import { useAuthStore } from '../../auth/stores/auth'
+import { useToastStore } from '../../../shared/stores/toast'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../../../shared/lib/firebaseClient'
 
@@ -13,6 +14,7 @@ const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
 const customersStore = useCustomersStore()
 const authStore = useAuthStore()
+const toastStore = useToastStore()
 
 const duitnowQrUrl = ref('')
 
@@ -155,6 +157,7 @@ const nextStep = () => { currentStep.value++ }
 const confirmPayment = async () => {
   if (isSubmitting.value) return
   isSubmitting.value = true
+  const tid = toastStore.loading('Processing order...')
   try {
     await salesStore.createOrder({
       customerName: selectedCustomer.value?.full_name || selectedCustomer.value?.name || 'Walk-in Customer',
@@ -162,9 +165,11 @@ const confirmPayment = async () => {
       items: cartItems.value,
       paymentMethod: selectedPaymentMethod.value
     })
+    toastStore.replace(tid, 'success', 'Order created successfully')
     currentStep.value = 3
   } catch (err) {
     console.error('Failed to create order:', err)
+    toastStore.replace(tid, 'error', 'Failed to process order. Please try again.')
   } finally {
     isSubmitting.value = false
   }

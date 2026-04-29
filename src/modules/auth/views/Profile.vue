@@ -1,15 +1,16 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue' // 1. Import onMounted
+import { ref, watch, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { getFirestore, doc, updateDoc } from 'firebase/firestore'
 import { firebaseApp } from '../../../shared/lib/firebaseClient'
-import { useAuth } from '../composables/useAuth' // 2. Import your composable
+import { useAuth } from '../composables/useAuth'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const authStore = useAuthStore()
-const { checkSession } = useAuth() // 3. Get the check function
+const { checkSession } = useAuth()
+const toastStore = useToastStore()
 
 const loading = ref(false)
-const message = ref('')
 
 // Local form state
 const profileForm = ref({
@@ -24,8 +25,6 @@ const pinForm = ref({
 })
 
 const pinLoading = ref(false)
-const pinMessage = ref('')
-const pinError = ref('')
 
 // 4. THE FIX: Force a session check when this page loads
 onMounted(async () => {
@@ -48,74 +47,60 @@ watch(() => authStore.user, (newUser) => {
 
 const updateProfile = async () => {
   loading.value = true
-  message.value = ''
-  
+  const tid = toastStore.loading('Saving profile...')
   try {
     const db = getFirestore(firebaseApp)
-    // Map to subcollection instead of global profiles
     const docRef = doc(db, `businesses/${authStore.user.businessId}/profiles`, authStore.user.profileId)
     await updateDoc(docRef, {
       full_name: profileForm.value.full_name,
       role: profileForm.value.role,
     })
-
     authStore.setUser({ ...authStore.user, ...profileForm.value })
-    message.value = 'Profile updated successfully!'
-    
+    toastStore.replace(tid, 'success', 'Profile updated successfully')
   } catch (error) {
     console.error(error)
-    message.value = 'Error updating profile.'
+    toastStore.replace(tid, 'error', 'Failed to update profile. Please try again.')
   } finally {
     loading.value = false
   }
 }
 
 const changePin = async () => {
-  pinError.value = ''
-  pinMessage.value = ''
-
   if (!pinForm.value.current || !pinForm.value.new || !pinForm.value.confirm) {
-    pinError.value = 'Please fill out all PIN fields.'
+    toastStore.error('Please fill out all PIN fields.')
     return
   }
-
   if (pinForm.value.new !== pinForm.value.confirm) {
-    pinError.value = 'New PINs do not match.'
+    toastStore.error('New PINs do not match.')
     return
   }
-
   if (pinForm.value.new.length !== 4) {
-    pinError.value = 'New PIN must be exactly 4 digits.'
+    toastStore.error('New PIN must be exactly 4 digits.')
     return
   }
 
   pinLoading.value = true
+  const tid = toastStore.loading('Updating PIN...')
   try {
     const db = getFirestore(firebaseApp)
     const docRef = doc(db, `businesses/${authStore.user.businessId}/profiles`, authStore.user.profileId)
-    
-    // Fetch current to validate
     const { getDoc } = await import('firebase/firestore')
     const snap = await getDoc(docRef)
 
     if (snap.exists()) {
-      const data = snap.data()
-      if (data.pin !== pinForm.value.current) {
-         pinError.value = 'Current PIN is incorrect.'
-         return
+      if (snap.data().pin !== pinForm.value.current) {
+        toastStore.replace(tid, 'error', 'Current PIN is incorrect.')
+        return
       }
-
-      // Update PIN
       await updateDoc(docRef, { pin: pinForm.value.new })
-      pinMessage.value = 'PIN updated successfully!'
-      pinForm.value = { current: '', new: '', confirm: ''} // reset
+      toastStore.replace(tid, 'success', 'PIN updated successfully')
+      pinForm.value = { current: '', new: '', confirm: '' }
     } else {
-      pinError.value = 'Failed to locate profile.'
+      toastStore.replace(tid, 'error', 'Failed to locate profile.')
     }
-
   } catch (error) {
     console.error(error)
-    pinError.value = 'Error securely updating PIN.'
+    toastStore.replace(tid, 'error', 'Failed to update PIN. Please try again.')
   } finally {
     pinLoading.value = false
   }
@@ -177,8 +162,7 @@ const changePin = async () => {
             </div>
           </form>
 
-          <div class="mt-6 flex justify-between items-center">
-            <span v-if="message" class="text-sm text-green-600 font-medium">{{ message }}</span>
+          <div class="mt-6 flex justify-end">
             <button @click="updateProfile" :disabled="loading" class="bg-[#4DB6AC] text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors disabled:opacity-50">
               {{ loading ? 'Saving...' : 'Save Changes' }}
             </button>
@@ -188,13 +172,6 @@ const changePin = async () => {
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
           <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">Change Profile PIN</h3>
           
-          <div v-if="pinError" class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded border border-red-200 dark:border-red-800/30">
-             {{ pinError }}
-          </div>
-          <div v-if="pinMessage" class="mb-4 p-3 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 text-sm rounded border border-green-200 dark:border-green-800/30">
-             {{ pinMessage }}
-          </div>
-
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
              <div class="md:col-span-2">
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Current PIN</label>

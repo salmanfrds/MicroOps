@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, reactive } from 'vue'
 import { useFinanceStore } from '../stores/finance'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const financeStore = useFinanceStore()
+const toastStore = useToastStore()
 
 // --- CATEGORY LISTS ---
 const incomeCategories = ['Service Income', 'Investment Returns', 'Rental Income', 'Refunds Received', 'Other Income']
@@ -48,6 +50,7 @@ const saveRecord = async () => {
   const finalCategory = form.selectedCategory === 'NEW' ? form.customCategory.trim() : form.selectedCategory
   if (!finalCategory || !form.amount || isSubmitting.value) return
   isSubmitting.value = true
+  const tid = toastStore.loading('Saving record...')
   try {
     await financeStore.addLedgerEntry({
       type: activeModal.value,
@@ -56,9 +59,11 @@ const saveRecord = async () => {
       amount: parseFloat(form.amount),
       date: form.date
     })
+    toastStore.replace(tid, 'success', 'Record saved successfully')
     closeModal()
   } catch (err) {
     console.error('Failed to save record:', err)
+    toastStore.replace(tid, 'error', 'Failed to save record. Please try again.')
   } finally {
     isSubmitting.value = false
   }
@@ -66,7 +71,13 @@ const saveRecord = async () => {
 
 const deleteEntry = async (entry) => {
   if (entry.readonly) return
-  await financeStore.deleteLedgerEntry(entry.id)
+  const tid = toastStore.loading('Deleting entry...')
+  try {
+    await financeStore.deleteLedgerEntry(entry.id)
+    toastStore.replace(tid, 'success', 'Entry deleted')
+  } catch (err) {
+    toastStore.replace(tid, 'error', 'Failed to delete entry. Please try again.')
+  }
 }
 
 // --- HELPERS ---

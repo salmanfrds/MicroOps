@@ -2,9 +2,11 @@
 import { ref, computed } from 'vue'
 import { useInventoryStore } from '../stores/inventory'
 import { useProductsStore } from '../../products/stores/products'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const inventoryStore = useInventoryStore()
 const productsStore = useProductsStore()
+const toastStore = useToastStore()
 
 // --- 1. CURRENT STOCK DATA ---
 const inventoryItems = computed(() => {
@@ -72,8 +74,14 @@ const closeAddModal = () => {
 
 const handleAddProduct = async () => {
     if (!addForm.value.name) return
-    await inventoryStore.addInventoryItem(addForm.value)
-    closeAddModal()
+    const tid = toastStore.loading('Adding inventory item...')
+    try {
+        await inventoryStore.addInventoryItem(addForm.value)
+        toastStore.replace(tid, 'success', 'Inventory item added successfully')
+        closeAddModal()
+    } catch (err) {
+        toastStore.replace(tid, 'error', 'Failed to add item. Please try again.')
+    }
 }
 
 // Edit Actions
@@ -95,44 +103,49 @@ const closeEditModal = () => {
 }
 
 const handleUpdateItem = async () => {
+    if (!editForm.value.name) return
+
+    const payload = {
+        name: editForm.value.name,
+        sku: editForm.value.sku || '',
+        cost: Number(editForm.value.cost) || 0,
+        type: editForm.value.type || 'CONSUMABLE',
+        productId: editForm.value.productId || null
+    }
+
+    const tid = toastStore.loading('Saving details...')
     try {
-        if (!editForm.value.name) return
-        
-        // Ensure no undefined values are sent to Firestore which causes silent crashes
-        const payload = {
-            name: editForm.value.name,
-            sku: editForm.value.sku || '',
-            cost: Number(editForm.value.cost) || 0,
-            type: editForm.value.type || 'CONSUMABLE',
-            productId: editForm.value.productId || null
-        }
-        
-        // 1. Update Details
         await inventoryStore.updateInventoryItem(editForm.value.id, payload)
-        
-        // 2. Adjust Stock if filled
+
         if (stockForm.value.amount && Number(stockForm.value.amount) > 0) {
             await inventoryStore.adjustStock(
-                editForm.value.id, 
-                stockForm.value.type, 
-                stockForm.value.amount, 
-                payload.cost, 
+                editForm.value.id,
+                stockForm.value.type,
+                stockForm.value.amount,
+                payload.cost,
                 stockForm.value.remark || ''
             )
         }
 
+        toastStore.replace(tid, 'success', 'Inventory item saved successfully')
         closeEditModal()
-    } catch (e) {
-        console.error("Failed to execute save: ", e)
-        alert("Failed to save transaction: " + e.message)
+    } catch (err) {
+        console.error('Failed to execute save: ', err)
+        toastStore.replace(tid, 'error', 'Failed to save. Please try again.')
     }
 }
 
 const handleDeleteItem = async () => {
-    if (!editForm.value.id) return;
+    if (!editForm.value.id) return
     if (confirm(`Are you sure you want to completely delete "${editForm.value.name}" from the inventory?\n\nThis will remove the item, but keep historical transactions.`)) {
-         await inventoryStore.deleteInventoryItem(editForm.value.id)
-         closeEditModal()
+        const tid = toastStore.loading('Deleting item...')
+        try {
+            await inventoryStore.deleteInventoryItem(editForm.value.id)
+            toastStore.replace(tid, 'success', 'Inventory item deleted')
+            closeEditModal()
+        } catch (err) {
+            toastStore.replace(tid, 'error', 'Failed to delete item. Please try again.')
+        }
     }
 }
 

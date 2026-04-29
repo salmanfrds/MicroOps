@@ -2,9 +2,11 @@
 import { ref, computed } from 'vue'
 import { useProductsStore } from '../stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
+const toastStore = useToastStore()
 
 const products = computed(() => {
     return productsStore.items.map(item => {
@@ -89,34 +91,52 @@ const closeEditModal = () => {
 
 const handleAddProduct = async () => {
     if (!addForm.value.name || !addForm.value.type || addForm.value.price === '') return
-    
+
     if ((addForm.value.type === 'Stocked' || addForm.value.type === 'Rental') && !addForm.value.inventoryId) {
-        alert('Please map this product to an inventory item.')
+        toastStore.error('Please map this product to an inventory item.')
         return
     }
 
-    await productsStore.addProduct(addForm.value)
-    closeAddModal()
+    const tid = toastStore.loading('Adding product...')
+    try {
+        await productsStore.addProduct(addForm.value)
+        toastStore.replace(tid, 'success', 'Product added successfully')
+        closeAddModal()
+    } catch (err) {
+        toastStore.replace(tid, 'error', 'Failed to add product. Please try again.')
+    }
 }
 
 const handleUpdateProduct = async () => {
     if (!editId.value || !editForm.value.name || !editForm.value.type || editForm.value.price === '') return
 
     if ((editForm.value.type === 'Stocked' || editForm.value.type === 'Rental') && !editForm.value.inventoryId) {
-        alert('Please map this product to an inventory item.')
+        toastStore.error('Please map this product to an inventory item.')
         return
     }
 
     const updates = { ...editForm.value, price: Number(editForm.value.price) || 0 }
-    await productsStore.updateProduct(editId.value, updates)
-    closeEditModal()
+    const tid = toastStore.loading('Saving changes...')
+    try {
+        await productsStore.updateProduct(editId.value, updates)
+        toastStore.replace(tid, 'success', 'Product updated successfully')
+        closeEditModal()
+    } catch (err) {
+        toastStore.replace(tid, 'error', 'Failed to update product. Please try again.')
+    }
 }
 
 const handleDelete = async () => {
-    if (!editId.value) return;
-    if (confirm("Are you sure you want to delete this product?")) {
-         await productsStore.deleteProduct(editId.value)
-         closeEditModal()
+    if (!editId.value) return
+    if (confirm('Are you sure you want to delete this product?')) {
+        const tid = toastStore.loading('Deleting product...')
+        try {
+            await productsStore.deleteProduct(editId.value)
+            toastStore.replace(tid, 'success', 'Product deleted')
+            closeEditModal()
+        } catch (err) {
+            toastStore.replace(tid, 'error', 'Failed to delete product. Please try again.')
+        }
     }
 }
 </script>

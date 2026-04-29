@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useCustomersStore } from '../stores/customers'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const customersStore = useCustomersStore()
+const toastStore = useToastStore()
 
 // Enhanced list with colors
 const customers = computed(() => {
@@ -66,21 +68,39 @@ const closeEditModal = () => {
 
 const handleAddCustomer = async () => {
     if (!addForm.value.name || !addForm.value.email) return
-    await customersStore.addCustomer(addForm.value)
-    closeAddModal()
+    const tid = toastStore.loading('Adding customer...')
+    try {
+        await customersStore.addCustomer(addForm.value)
+        toastStore.replace(tid, 'success', 'Customer added successfully')
+        closeAddModal()
+    } catch (err) {
+        toastStore.replace(tid, 'error', 'Failed to add customer. Please try again.')
+    }
 }
 
 const handleUpdateCustomer = async () => {
     if (!editId.value || !editForm.value.name || !editForm.value.email) return
-    await customersStore.updateCustomer(editId.value, editForm.value)
-    closeEditModal()
+    const tid = toastStore.loading('Saving changes...')
+    try {
+        await customersStore.updateCustomer(editId.value, editForm.value)
+        toastStore.replace(tid, 'success', 'Customer updated successfully')
+        closeEditModal()
+    } catch (err) {
+        toastStore.replace(tid, 'error', 'Failed to update customer. Please try again.')
+    }
 }
 
 const handleDeleteCustomer = async () => {
-    if (!editId.value) return;
-    if (confirm("Are you sure you want to delete this profile?")) {
-         await customersStore.deleteCustomer(editId.value)
-         closeEditModal()
+    if (!editId.value) return
+    if (confirm('Are you sure you want to delete this profile?')) {
+        const tid = toastStore.loading('Deleting customer...')
+        try {
+            await customersStore.deleteCustomer(editId.value)
+            toastStore.replace(tid, 'success', 'Customer deleted')
+            closeEditModal()
+        } catch (err) {
+            toastStore.replace(tid, 'error', 'Failed to delete customer. Please try again.')
+        }
     }
 }
 </script>

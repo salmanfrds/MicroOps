@@ -4,8 +4,10 @@ import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/fi
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../../../shared/lib/firebaseClient'
 import { useAuthStore } from '../../auth/stores/auth'
+import { useToastStore } from '../../../shared/stores/toast'
 
 const authStore = useAuthStore()
+const toastStore = useToastStore()
 
 const business = ref({
   name: '',
@@ -24,7 +26,6 @@ const qrPreview = ref('')
 const logoUploading = ref(false)
 const qrUploading = ref(false)
 const saving = ref(false)
-const saveSuccess = ref(false)
 
 // --- STAFF ---
 const staff = ref([])
@@ -69,6 +70,7 @@ const saveProfile = async () => {
   const uid = getBizId()
   if (!uid || saving.value) return
   saving.value = true
+  const tid = toastStore.loading('Saving business details...')
   try {
     await setDoc(doc(db, 'businesses', uid), {
       name: business.value.name,
@@ -81,10 +83,10 @@ const saveProfile = async () => {
       logoUrl: business.value.logoUrl,
       duitnowQrUrl: business.value.duitnowQrUrl
     }, { merge: true })
-    saveSuccess.value = true
-    setTimeout(() => { saveSuccess.value = false }, 2500)
+    toastStore.replace(tid, 'success', 'Business details saved successfully')
   } catch (err) {
     console.error('Error saving profile:', err)
+    toastStore.replace(tid, 'error', 'Failed to save details. Please try again.')
   } finally {
     saving.value = false
   }
@@ -122,6 +124,7 @@ const handleLogoUpload = async (event) => {
   const uid = getBizId()
   if (!uid) return
   logoUploading.value = true
+  const tid = toastStore.loading('Uploading logo...')
   try {
     logoPreview.value = URL.createObjectURL(raw)
     const file = await compressImage(raw, 1024, 0.85)
@@ -129,9 +132,11 @@ const handleLogoUpload = async (event) => {
     business.value.logoUrl = url
     logoPreview.value = url
     await setDoc(doc(db, 'businesses', uid), { logoUrl: url }, { merge: true })
+    toastStore.replace(tid, 'success', 'Logo uploaded successfully')
   } catch (err) {
     console.error('Logo upload failed:', err)
     logoPreview.value = business.value.logoUrl
+    toastStore.replace(tid, 'error', 'Logo upload failed. Please try again.')
   } finally {
     logoUploading.value = false
   }
@@ -144,6 +149,7 @@ const handleQrUpload = async (event) => {
   const uid = getBizId()
   if (!uid) return
   qrUploading.value = true
+  const tid = toastStore.loading('Uploading QR code...')
   try {
     qrPreview.value = URL.createObjectURL(raw)
     const file = await compressImage(raw, 1024, 0.9)
@@ -151,9 +157,11 @@ const handleQrUpload = async (event) => {
     business.value.duitnowQrUrl = url
     qrPreview.value = url
     await setDoc(doc(db, 'businesses', uid), { duitnowQrUrl: url }, { merge: true })
+    toastStore.replace(tid, 'success', 'QR code uploaded successfully')
   } catch (err) {
     console.error('QR upload failed:', err)
     qrPreview.value = business.value.duitnowQrUrl
+    toastStore.replace(tid, 'error', 'QR upload failed. Please try again.')
   } finally {
     qrUploading.value = false
   }
@@ -178,10 +186,11 @@ const openAddStaffModal = () => {
 
 const handleAddStaff = async () => {
   if (!newStaff.value.full_name || newStaff.value.pin.length !== 4) {
-    alert('Please provide a name and a 4-digit PIN')
+    toastStore.error('Please provide a name and a 4-digit PIN.')
     return
   }
   const uid = getBizId()
+  const tid = toastStore.loading('Creating staff profile...')
   try {
     const profileId = `staff_${Date.now()}`
     await setDoc(doc(db, `businesses/${uid}/profiles`, profileId), {
@@ -191,24 +200,29 @@ const handleAddStaff = async () => {
       created_at: new Date().toISOString()
     })
     await fetchStaff()
+    toastStore.replace(tid, 'success', 'Staff profile created successfully')
     isAddStaffModalOpen.value = false
   } catch (err) {
     console.error('Error adding staff:', err)
+    toastStore.replace(tid, 'error', 'Failed to create staff profile. Please try again.')
   }
 }
 
 const deleteStaff = async (profileId) => {
   if (profileId === 'owner') {
-    alert('Cannot delete the Owner account.')
+    toastStore.error('Cannot delete the Owner account.')
     return
   }
   if (confirm('Are you sure you want to remove this profile?')) {
     const uid = getBizId()
+    const tid = toastStore.loading('Removing staff profile...')
     try {
       await deleteDoc(doc(db, `businesses/${uid}/profiles`, profileId))
       await fetchStaff()
+      toastStore.replace(tid, 'success', 'Staff profile removed')
     } catch (err) {
       console.error('Error deleting staff:', err)
+      toastStore.replace(tid, 'error', 'Failed to remove staff profile. Please try again.')
     }
   }
 }
@@ -253,9 +267,6 @@ onMounted(async () => {
           class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2.5 px-8 rounded-lg shadow hover:bg-[#003d33] dark:hover:bg-teal-600 transition-all active:scale-95 disabled:opacity-60">
           {{ saving ? 'Saving...' : 'Save Details' }}
         </button>
-        <transition name="fade">
-          <span v-if="saveSuccess" class="text-emerald-600 dark:text-emerald-400 text-sm font-semibold">✓ Changes saved!</span>
-        </transition>
       </div>
     </header>
 
@@ -447,7 +458,3 @@ onMounted(async () => {
   </section>
 </template>
 
-<style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity 0.4s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-</style>
