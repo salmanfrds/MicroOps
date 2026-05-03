@@ -49,7 +49,7 @@ export const useSalesStore = defineStore('sales', () => {
             customerId: customerId || null,
             items: processedItems,
             total,
-            status: hasRentals ? 'Active' : 'Processing',
+            status: hasRentals ? 'Active' : 'Completed',
             hasRentals,
             paymentMethod: paymentMethod || 'Cash',
             paymentStatus: 'Paid',

@@ -55,11 +55,10 @@ const verifyPin = () => {
   if (enteredPin.value === selectedProfile.value.pin) {
     // Correct PIN: load into store and go to dashboard
     authStore.setUser({
-      businessId: getAuth(firebaseApp).currentUser.uid, // Tie them to the business
+      ...selectedProfile.value,           // includes avatarUrl, full_name, role, pin, etc.
+      businessId: getAuth(firebaseApp).currentUser.uid,
       profileId: selectedProfile.value.id,
-      full_name: selectedProfile.value.full_name,
-      role: selectedProfile.value.role,
-      email: getAuth(firebaseApp).currentUser.email
+      email: getAuth(firebaseApp).currentUser.email,
     })
     
     isPinModalOpen.value = false
@@ -112,10 +111,11 @@ const getAvatarColor = (idx) => avatarColors[idx % avatarColors.length]
         <div :class="[
           'w-28 h-28 md:w-36 md:h-36 rounded-xl shadow-lg flex items-center justify-center text-4xl font-bold mb-3 overflow-hidden border-2',
           selectedProfile?.id === profile.id ? 'border-teal-400' : 'border-transparent group-hover:border-gray-300',
-          getAvatarColor(index)
+          profile.avatarUrl ? '' : getAvatarColor(index)
         ]">
-          <!-- Show first letter of name -->
-          {{ profile.full_name ? profile.full_name.charAt(0).toUpperCase() : 'U' }}
+          <!-- Show avatar photo if available, else initials -->
+          <img v-if="profile.avatarUrl" :src="profile.avatarUrl" class="w-full h-full object-cover" alt="" />
+          <template v-else>{{ profile.full_name ? profile.full_name.charAt(0).toUpperCase() : 'U' }}</template>
         </div>
         <p class="text-gray-400 group-hover:text-white font-medium text-lg">{{ profile.full_name }}</p>
         <span class="text-xs text-gray-500 mt-1 uppercase tracking-widest">{{ profile.role }}</span>

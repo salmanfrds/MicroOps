@@ -10,16 +10,13 @@ const authStore = useAuthStore()
 const toastStore = useToastStore()
 
 const business = ref({
-  name: '',
-  address: '',
-  phone: '',
-  website: '',
-  bankName: '',
-  accountNumber: '',
-  duitnowId: '',
-  logoUrl: '',
-  duitnowQrUrl: ''
+  name: '', address: '', phone: '', website: '',
+  bankName: '', accountNumber: '', duitnowId: '',
+  logoUrl: '', duitnowQrUrl: ''
 })
+const savedName = ref('') // only updates after a successful save
+
+
 
 const logoPreview = ref('')
 const qrPreview = ref('')
@@ -59,6 +56,7 @@ const loadProfile = async () => {
       }
       logoPreview.value = data.logoUrl || ''
       qrPreview.value = data.duitnowQrUrl || ''
+      savedName.value = data.name || ''   // snapshot the persisted name
     }
   } catch (err) {
     console.error('Error loading business profile:', err)
@@ -91,6 +89,7 @@ const saveProfile = async () => {
     saving.value = false
     if (success) {
       toastStore.replace(tid, 'success', 'Business details saved successfully')
+      savedName.value = business.value.name  // update title only after save
     } else {
       toastStore.replace(tid, 'error', 'Failed to save details. Please try again.')
     }
@@ -283,7 +282,7 @@ onMounted(async () => {
         </div>
 
         <div>
-          <h2 class="text-3xl font-bold text-gray-800 dark:text-white">{{ business.name || 'Business Settings' }}</h2>
+          <h2 class="text-3xl font-bold text-gray-800 dark:text-white">{{ savedName || 'Business Settings' }}</h2>
           <p class="mt-2 text-gray-600 dark:text-gray-400 mb-4">Click the logo to upload your business photo.</p>
         </div>
       </div>

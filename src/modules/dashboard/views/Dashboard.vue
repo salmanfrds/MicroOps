@@ -4,206 +4,358 @@ import Chart from 'chart.js/auto'
 import { useDashboardAnalytics } from '../composables/useDashboardAnalytics'
 
 const {
-  totalRevenue,
-  totalOrders,
-  openOrders,
+  totalRevenue, netProfit, totalOrders, lowStockCount, outOfStockCount,
+  revenueVsExpensesData, dailySalesTrendData, salesByProductData,
+  orderStatusData, inventoryStockData,
   newCustomersThisMonth,
-  salesByMonthData,
-  salesByProductData,
-  weeklyOrdersData
 } = useDashboardAnalytics()
 
-const salesChartCanvas = ref(null)
-const productChartCanvas = ref(null)
-const ordersChartCanvas = ref(null)
+// ── Canvas refs ────────────────────────────────────────
+const revExpCanvas   = ref(null)
+const trendCanvas    = ref(null)
+const productCanvas  = ref(null)
+const statusCanvas   = ref(null)
+const stockCanvas    = ref(null)
 
-let salesChart = null
-let productChart = null
-let ordersChart = null
-let observer = null
+let revExpChart = null, trendChart = null, productChart = null,
+    statusChart = null, stockChart  = null, observer = null
 
-const getChartColors = () => {
+const fmt = (n) => {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000)    return (n / 1000).toFixed(1) + 'K'
+  return n.toFixed(2)
+}
+
+const getColors = () => {
   const isDark = document.documentElement.classList.contains('dark')
   return {
-    textColor: isDark ? '#e5e7eb' : '#6b7280',
-    gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
+    text  : isDark ? '#d1d5db' : '#6b7280',
+    grid  : isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
+    bg    : isDark ? '#1f2937' : '#ffffff',
+    label : isDark ? '#9ca3af' : '#9ca3af',
   }
 }
 
+// ── Chart initialisers ─────────────────────────────────
 const initCharts = () => {
-  const { textColor, gridColor } = getChartColors()
+  const c = getColors()
 
-  if (salesChart) salesChart.destroy()
-  if (productChart) productChart.destroy()
-  if (ordersChart) ordersChart.destroy()
-
-  if (salesChartCanvas.value) {
-    salesChart = new Chart(salesChartCanvas.value, {
-      type: 'line',
-      data: {
-        labels: salesByMonthData.value.labels,
-        datasets: [{
-          label: 'Revenue (RM)',
-          data: salesByMonthData.value.sales,
-          borderColor: '#059669',
-          backgroundColor: 'rgba(5, 150, 105, 0.1)',
-          fill: true,
-          tension: 0.4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: textColor } } },
-        scales: {
-          y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
-          x: { grid: { color: gridColor }, ticks: { color: textColor } }
-        }
-      }
-    })
+  const baseScales = {
+    y: { beginAtZero: true, grid: { color: c.grid }, ticks: { color: c.text } },
+    x: { grid: { display: false }, ticks: { color: c.text } }
   }
+  const baseLegend = { labels: { color: c.text, usePointStyle: true, pointStyleWidth: 8 } }
 
-  if (productChartCanvas.value) {
-    productChart = new Chart(productChartCanvas.value, {
-      type: 'doughnut',
-      data: {
-        labels: salesByProductData.value.labels,
-        datasets: [{
-          label: 'Revenue by Product',
-          data: salesByProductData.value.data,
-          backgroundColor: ['#059669', '#34D399', '#6EE7B7', '#0D9488', '#9CA3AF'],
-          borderWidth: 0,
-          hoverOffset: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom', labels: { color: textColor } } }
-      }
-    })
-  }
+  ;[revExpChart, trendChart, productChart, statusChart, stockChart].forEach(ch => ch?.destroy())
 
-  if (ordersChartCanvas.value) {
-    ordersChart = new Chart(ordersChartCanvas.value, {
+  // 1. Revenue vs Expenses — grouped bar
+  if (revExpCanvas.value) {
+    const d = revenueVsExpensesData.value
+    revExpChart = new Chart(revExpCanvas.value, {
       type: 'bar',
       data: {
-        labels: weeklyOrdersData.value.labels,
+        labels: d.labels,
+        datasets: [
+          {
+            label: 'Revenue (RM)',
+            data: d.revenue,
+            backgroundColor: 'rgba(5,150,105,0.85)',
+            borderRadius: 5,
+          },
+          {
+            label: 'Expenses (RM)',
+            data: d.expenses,
+            backgroundColor: 'rgba(239,68,68,0.75)',
+            borderRadius: 5,
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: baseLegend, tooltip: { mode: 'index' } },
+        scales: baseScales
+      }
+    })
+  }
+
+  // 2. Daily Sales Trend — area line
+  if (trendCanvas.value) {
+    const d = dailySalesTrendData.value
+    trendChart = new Chart(trendCanvas.value, {
+      type: 'line',
+      data: {
+        labels: d.labels,
         datasets: [{
-          label: 'Orders',
-          data: weeklyOrdersData.value.data,
-          backgroundColor: '#0D9488',
-          borderRadius: 4
+          label: 'Sales (RM)',
+          data: d.data,
+          borderColor: '#0d9488',
+          backgroundColor: 'rgba(13,148,136,0.12)',
+          fill: true,
+          tension: 0.45,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#0d9488',
         }]
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: textColor } } },
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: baseScales
+      }
+    })
+  }
+
+  // 3. Top Products — donut
+  if (productCanvas.value) {
+    const d = salesByProductData.value
+    productChart = new Chart(productCanvas.value, {
+      type: 'doughnut',
+      data: {
+        labels: d.labels,
+        datasets: [{
+          data: d.data,
+          backgroundColor: ['#059669','#0d9488','#0891b2','#7c3aed','#f59e0b'],
+          borderWidth: 2,
+          borderColor: c.bg,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } } }
+        }
+      }
+    })
+  }
+
+  // 4. Order Status — donut
+  if (statusCanvas.value) {
+    const d = orderStatusData.value
+    statusChart = new Chart(statusCanvas.value, {
+      type: 'doughnut',
+      data: {
+        labels: d.labels,
+        datasets: [{
+          data: d.data,
+          backgroundColor: ['#059669','#f59e0b','#6366f1','#ef4444'],
+          borderWidth: 2,
+          borderColor: c.bg,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: c.text, usePointStyle: true, pointStyleWidth: 8, padding: 12, font: { size: 11 } } }
+        }
+      }
+    })
+  }
+
+  // 5. Inventory Stock — horizontal bar
+  if (stockCanvas.value) {
+    const d = inventoryStockData.value
+    stockChart = new Chart(stockCanvas.value, {
+      type: 'bar',
+      data: {
+        labels: d.labels,
+        datasets: [{
+          label: 'Stock',
+          data: d.data,
+          backgroundColor: d.colors,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
         scales: {
-          y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
-          x: { grid: { display: false }, ticks: { color: textColor } }
+          x: { beginAtZero: true, grid: { color: c.grid }, ticks: { color: c.text } },
+          y: { grid: { display: false }, ticks: { color: c.text } }
         }
       }
     })
   }
 }
 
-// Update chart data without full re-init (smooth updates)
-const updateChartsData = () => {
-  if (salesChart) {
-    salesChart.data.labels = salesByMonthData.value.labels
-    salesChart.data.datasets[0].data = salesByMonthData.value.sales
-    salesChart.update()
+const updateAll = () => {
+  const d1 = revenueVsExpensesData.value
+  if (revExpChart) {
+    revExpChart.data.labels = d1.labels
+    revExpChart.data.datasets[0].data = d1.revenue
+    revExpChart.data.datasets[1].data = d1.expenses
+    revExpChart.update()
   }
+  const d2 = dailySalesTrendData.value
+  if (trendChart) {
+    trendChart.data.labels = d2.labels
+    trendChart.data.datasets[0].data = d2.data
+    trendChart.update()
+  }
+  const d3 = salesByProductData.value
   if (productChart) {
-    productChart.data.labels = salesByProductData.value.labels
-    productChart.data.datasets[0].data = salesByProductData.value.data
+    productChart.data.labels = d3.labels
+    productChart.data.datasets[0].data = d3.data
     productChart.update()
   }
-  if (ordersChart) {
-    ordersChart.data.datasets[0].data = weeklyOrdersData.value.data
-    ordersChart.update()
+  const d4 = orderStatusData.value
+  if (statusChart) {
+    statusChart.data.datasets[0].data = d4.data
+    statusChart.update()
+  }
+  const d5 = inventoryStockData.value
+  if (stockChart) {
+    stockChart.data.labels = d5.labels
+    stockChart.data.datasets[0].data = d5.data
+    stockChart.data.datasets[0].backgroundColor = d5.colors
+    stockChart.update()
   }
 }
 
 onMounted(() => {
   initCharts()
-
-  // Watch data changes and update charts smoothly
-  watch([salesByMonthData, salesByProductData, weeklyOrdersData], updateChartsData, { deep: true })
-
-  // Reinit on theme change
+  watch(
+    [revenueVsExpensesData, dailySalesTrendData, salesByProductData, orderStatusData, inventoryStockData],
+    updateAll, { deep: true }
+  )
   observer = new MutationObserver(initCharts)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 })
 
 onUnmounted(() => {
   observer?.disconnect()
-  salesChart?.destroy()
-  productChart?.destroy()
-  ordersChart?.destroy()
+  ;[revExpChart, trendChart, productChart, statusChart, stockChart].forEach(c => c?.destroy())
 })
 </script>
 
 <template>
-  <section class="pb-10">
-    <header class="mb-8">
+  <section class="pb-12 space-y-10">
+
+    <!-- Header -->
+    <header>
       <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Dashboard</h2>
-      <p class="mt-2 text-gray-600 dark:text-gray-400">Welcome back! Here's a summary of your business performance.</p>
+      <p class="mt-1 text-gray-500 dark:text-gray-400">Business performance at a glance.</p>
     </header>
 
-    <!-- KPI Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-transparent dark:border-gray-700 transition-colors">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Revenue</h3>
-        <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">RM {{ totalRevenue.toFixed(2) }}</p>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">From paid orders</p>
+    <!-- ── KPI Cards ──────────────────────────────────────────────── -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+
+      <!-- Total Revenue -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 flex flex-col gap-3">
+        <span class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">Total Revenue</span>
+        <div>
+          <p class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">RM {{ fmt(totalRevenue) }}</p>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">From all paid orders</p>
+        </div>
       </div>
 
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-transparent dark:border-gray-700 transition-colors">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Orders</h3>
-        <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ totalOrders }}</p>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">All time</p>
+      <!-- Net Profit -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 flex flex-col gap-3">
+        <span class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">Net Profit</span>
+        <div>
+          <p class="text-3xl font-bold tracking-tight"
+            :class="netProfit >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-500 dark:text-red-400'">
+            {{ netProfit >= 0 ? '' : '-' }}RM {{ fmt(Math.abs(netProfit)) }}
+          </p>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Income minus expenses</p>
+        </div>
       </div>
 
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-transparent dark:border-gray-700 transition-colors">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">Open Orders</h3>
-        <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ openOrders }}</p>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Awaiting processing</p>
+      <!-- Total Orders -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 flex flex-col gap-3">
+        <span class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">Total Orders</span>
+        <div>
+          <p class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{{ totalOrders }}</p>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">All time orders</p>
+        </div>
       </div>
 
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-transparent dark:border-gray-700 transition-colors">
-        <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">New Customers</h3>
-        <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ newCustomersThisMonth }}</p>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">This month</p>
+      <!-- Stock Alerts -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 flex flex-col gap-3">
+        <span class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">Stock Alerts</span>
+        <div>
+          <p class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{{ lowStockCount + outOfStockCount }}</p>
+          <div class="flex items-center gap-3 mt-1">
+            <span class="text-xs text-amber-500 font-semibold">{{ lowStockCount }} low</span>
+            <span class="text-xs text-red-500 font-semibold">{{ outOfStockCount }} out</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Charts Row 1 -->
-    <div class="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Monthly Revenue (Last 6 Months)</h3>
-        <div class="relative h-72">
-          <canvas ref="salesChartCanvas"></canvas>
+    <!-- ── Charts Row 1: Revenue vs Expenses + Daily Trend ────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-5">
+
+      <!-- Revenue vs Expenses bar -->
+      <div class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
+        <div class="mb-4">
+          <h3 class="text-base font-bold text-gray-800 dark:text-white">Revenue vs Expenses</h3>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Last 6 months comparison</p>
         </div>
-      </div>
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Revenue by Product</h3>
         <div class="relative h-64">
-          <canvas ref="productChartCanvas"></canvas>
+          <canvas ref="revExpCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Daily Sales Trend line -->
+      <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
+        <div class="mb-4">
+          <h3 class="text-base font-bold text-gray-800 dark:text-white">Daily Sales Trend</h3>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Last 14 days</p>
+        </div>
+        <div class="relative h-64">
+          <canvas ref="trendCanvas"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- Charts Row 2 -->
-    <div class="mt-8">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">Weekly Order Volume</h3>
-        <div class="relative h-64">
-          <canvas ref="ordersChartCanvas"></canvas>
+    <!-- ── Charts Row 2: Products + Order Status + Stock ─────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+      <!-- Top Products donut -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
+        <div class="mb-4">
+          <h3 class="text-base font-bold text-gray-800 dark:text-white">Top Products</h3>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">By revenue contribution</p>
+        </div>
+        <div class="relative h-60">
+          <canvas ref="productCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Order Status donut -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
+        <div class="mb-4">
+          <h3 class="text-base font-bold text-gray-800 dark:text-white">Order Status</h3>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Distribution of all orders</p>
+        </div>
+        <div class="relative h-60">
+          <canvas ref="statusCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Inventory Stock horizontal bar -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:col-span-2 lg:col-span-1">
+        <div class="mb-4 flex items-start justify-between">
+          <div>
+            <h3 class="text-base font-bold text-gray-800 dark:text-white">Inventory Levels</h3>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Top 8 items by stock</p>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wide shrink-0">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>OK</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>Low</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>Out</span>
+          </div>
+        </div>
+        <div class="relative h-60">
+          <canvas ref="stockCanvas"></canvas>
         </div>
       </div>
     </div>
+
   </section>
 </template>

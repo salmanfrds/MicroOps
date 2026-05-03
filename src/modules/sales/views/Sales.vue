@@ -34,6 +34,7 @@ const selectedPaymentMethod = ref('Cash')
 const selectedCustomerId = ref('')
 const isSubmitting = ref(false)
 const isViewAllModalOpen = ref(false)
+const activeTypeTab = ref('All')
 
 const sortedOrders = computed(() => {
   return [...salesStore.orders].sort((a, b) => {
@@ -70,6 +71,11 @@ const cart = computed(() =>
       rentalStatus: p.type === 'Rental' ? (invItem?.rentalStatus || 'Available') : null
     }
   })
+)
+
+const productTypes = ['All', 'Stocked', 'Prepared', 'Service', 'Rental']
+const filteredCart = computed(() =>
+  activeTypeTab.value === 'All' ? cart.value : cart.value.filter(p => p.type === activeTypeTab.value)
 )
 
 const cartQty = ref({})
@@ -242,6 +248,33 @@ const viewReceipt = (order) => {
 const closeModal = () => { isModalOpen.value = false }
 const nextStep = () => { currentStep.value++ }
 
+const handleProceedToPayment = () => {
+  if (selectedPaymentMethod.value === 'Cash') {
+    confirmPayment()
+  } else {
+    currentStep.value = 2
+  }
+}
+
+const printReceipt = () => {
+  window.print()
+}
+
+const shareReceipt = async () => {
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'Receipt from MicroOps',
+        text: `Order ${receiptData.value.id} - Total RM ${receiptData.value.total.toFixed(2)}`,
+      })
+    } catch (err) {
+      console.log('Error sharing:', err)
+    }
+  } else {
+    alert('Sharing is not supported on this device/browser.')
+  }
+}
+
 const confirmPayment = async () => {
   if (isSubmitting.value) return
   isSubmitting.value = true
@@ -377,7 +410,7 @@ const receiptData = computed(() => {
       <div v-if="isModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeModal" class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
 
-        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden transition-colors">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-4xl rounded-lg shadow-2xl overflow-hidden transition-colors flex flex-col" style="height:90vh;max-height:680px">
 
           <!-- Modal Header -->
           <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-teal-50 dark:bg-teal-900/20">
@@ -385,158 +418,195 @@ const receiptData = computed(() => {
               <h3 class="text-lg font-bold text-[#004D40] dark:text-teal-300">
                 {{ isViewMode ? 'Order Details' : 'New Transaction' }}
               </h3>
-              <p v-if="!isViewMode" class="text-xs text-teal-700 dark:text-teal-400">Step {{ currentStep }} of 3</p>
+              <p v-if="!isViewMode" class="text-xs text-teal-700 dark:text-teal-400">Select items &amp; confirm payment</p>
               <p v-else class="text-xs text-teal-700 dark:text-teal-400">View Only</p>
             </div>
             <button @click="closeModal" class="text-gray-400 hover:text-red-500 text-2xl font-bold leading-none">&times;</button>
           </div>
 
-          <!-- Step 1: Select Products -->
-          <div v-if="currentStep === 1" class="p-6">
-            <!-- Customer selector -->
-            <div class="mb-4">
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Customer (optional)</label>
-              <select v-model="selectedCustomerId"
-                class="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC]">
-                <option value="">Walk-in Customer</option>
-                <option v-for="c in customersStore.items" :key="c.id" :value="c.id">
-                  {{ c.full_name || c.name }}
-                </option>
-              </select>
-            </div>
+        <!-- POS Layout: product catalog left + order summary right -->
+          <div v-if="currentStep === 1" class="flex flex-1 overflow-hidden" style="min-height:0">
 
-            <h4 class="font-bold text-gray-700 dark:text-gray-300 mb-3 text-sm uppercase tracking-wide">Select Products</h4>
+            <!-- LEFT: product catalog -->
+            <div class="flex flex-col flex-1 min-w-0 overflow-hidden border-r border-gray-100 dark:border-gray-700">
 
-            <div v-if="productsStore.items.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
-              No products found. Add products first.
-            </div>
-
-            <div class="space-y-3 max-h-64 overflow-y-auto pr-1">
-              <div v-for="product in cart" :key="product.id"
-                class="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-[#4DB6AC] hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all">
-
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <div :class="product.qty > 0 ? 'bg-[#4DB6AC] border-[#4DB6AC]' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'"
-                    class="w-4 h-4 border rounded flex items-center justify-center transition-colors shrink-0">
-                    <svg v-if="product.qty > 0" class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <div class="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 shrink-0">
-                    <img v-if="product.imageUrl" :src="product.imageUrl" class="w-full h-full object-cover" alt="" />
-                    <div v-else class="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400 dark:text-gray-500">
-                      {{ product.name?.charAt(0)?.toUpperCase() || '?' }}
-                    </div>
-                  </div>
-                  <div class="min-w-0">
-                    <div class="font-bold text-gray-800 dark:text-gray-200 text-sm truncate">{{ product.name }}</div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400">SKU: {{ product.sku }}</div>
-                  </div>
+              <!-- Customer row + type tabs -->
+              <div class="px-4 pt-3 pb-2 shrink-0 space-y-2 border-b border-gray-100 dark:border-gray-700">
+                <select v-model="selectedCustomerId"
+                  class="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC]">
+                  <option value="">Walk-in Customer</option>
+                  <option v-for="c in customersStore.items" :key="c.id" :value="c.id">{{ c.full_name || c.name }}</option>
+                </select>
+                <div class="flex gap-1.5 overflow-x-auto pb-0.5">
+                  <button v-for="tab in productTypes" :key="tab"
+                    @click="activeTypeTab = tab"
+                    :class="activeTypeTab === tab
+                      ? 'bg-[#004D40] text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-teal-900/20'"
+                    class="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors">
+                    {{ tab }}
+                  </button>
                 </div>
+              </div>
 
-                <!-- Rental product controls -->
-                <div v-if="product.type === 'Rental'" class="flex items-center gap-2 shrink-0">
-                  <!-- Already rented out -->
-                  <div v-if="product.rentalStatus === 'Rented'" class="flex items-center gap-2">
-                    <span class="px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
-                      Currently Rented
-                    </span>
-                  </div>
+              <!-- Product grid -->
+              <div class="overflow-y-auto flex-1 p-3">
+                <div v-if="filteredCart.length === 0" class="text-center py-12 text-gray-400 dark:text-gray-500 text-sm">No products.</div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div v-for="product in filteredCart" :key="product.id"
+                    class="relative bg-white dark:bg-gray-700 border rounded-xl overflow-hidden transition-all"
+                    :class="(cartQty[product.id] || 0) > 0 ? 'border-[#4DB6AC] ring-1 ring-[#4DB6AC]/30' : 'border-gray-200 dark:border-gray-600'">
 
-                  <!-- Available to reserve -->
-                  <template v-else>
-                    <button @click.stop="toggleRental(product.id)"
-                      :class="product.qty > 0 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-indigo-400'"
-                      class="px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shrink-0">
-                      {{ product.qty > 0 ? '✓ Reserved' : 'Reserve' }}
-                    </button>
-                    <div v-if="product.qty > 0" class="flex items-center gap-1">
-                      <input v-model.number="cartDuration[product.id]" type="number" min="1" :max="product.maxDuration || 999"
-                        class="w-14 text-center p-1.5 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-bold text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-400 outline-none" />
-                      <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ product.rateUnit }}s</span>
+                    <!-- Product image -->
+                    <div class="w-full h-24 bg-gray-100 dark:bg-gray-600 relative overflow-hidden">
+                      <img v-if="product.imageUrl" :src="product.imageUrl" class="w-full h-full object-cover" alt="" />
+                      <div v-else class="w-full h-full flex items-center justify-center text-2xl font-bold text-gray-300 dark:text-gray-500">
+                        {{ product.name?.charAt(0)?.toUpperCase() || '?' }}
+                      </div>
+                      <!-- Type badge -->
+                      <span class="absolute top-1.5 left-1.5 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                        :class="{
+                          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': product.type === 'Stocked',
+                          'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': product.type === 'Prepared',
+                          'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400': product.type === 'Service',
+                          'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400': product.type === 'Rental',
+                        }">{{ product.type }}</span>
+                      <!-- Out of stock overlay -->
+                      <div v-if="product.type !== 'Rental' && product.type !== 'Service' && product.type !== 'Prepared' && product.stock === 0"
+                        class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span class="text-white text-[10px] font-bold uppercase">Out of Stock</span>
+                      </div>
                     </div>
-                  </template>
 
-                  <div class="text-right min-w-20">
-                    <span :class="product.rentalStatus === 'Rented' ? 'text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' : 'text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/30'"
-                      class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block mb-1">
-                      {{ product.rentalStatus === 'Rented' ? 'Rented' : 'Rental' }}
-                    </span>
-                    <div class="text-sm font-bold text-[#004D40] dark:text-teal-400">RM {{ (product.price || 0).toFixed(2) }}/{{ product.rateUnit }}</div>
-                  </div>
-                </div>
+                    <!-- Info + controls -->
+                    <div class="p-2">
+                      <div class="font-bold text-gray-800 dark:text-gray-100 text-xs truncate">{{ product.name }}</div>
+                      <div class="text-[#004D40] dark:text-teal-400 font-bold text-sm mt-0.5">
+                        RM {{ (product.price || 0).toFixed(2) }}<span v-if="product.type === 'Rental'" class="text-[10px] font-normal text-gray-400">/{{ product.rateUnit }}</span>
+                      </div>
 
-                <!-- Regular product controls -->
-                <div v-else class="flex items-center gap-3 shrink-0">
-                  <div class="flex items-center border rounded bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 h-8 shadow-sm">
-                    <button @click.stop="decrement(product.id)" :disabled="product.qty === 0"
-                      class="w-7 h-full flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors text-gray-500 dark:text-gray-400 border-r dark:border-gray-600 disabled:opacity-50">
-                      <span class="font-bold text-sm">−</span>
-                    </button>
-                    <div class="px-2 min-w-8 text-center text-sm font-bold text-gray-700 dark:text-gray-200 select-none">{{ product.qty }}</div>
-                    <button @click.stop="increment(product.id)" :disabled="product.qty >= product.stock"
-                      class="w-7 h-full flex items-center justify-center hover:bg-teal-50 dark:hover:bg-teal-900/30 hover:text-[#4DB6AC] transition-colors text-gray-500 dark:text-gray-400 border-l dark:border-gray-600 disabled:opacity-50">
-                      <span class="font-bold text-sm">+</span>
-                    </button>
-                  </div>
-                  <div class="text-right min-w-20">
-                    <span v-if="product.inventoryId"
-                      :class="getStockStatusClass(product.stock)"
-                      class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block mb-1">
-                      {{ getStockLabel(product.stock) }}
-                    </span>
-                    <span v-else class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block mb-1 text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30">
-                      Available
-                    </span>
-                    <div class="text-sm font-bold text-[#004D40] dark:text-teal-400">RM {{ (product.price || 0).toFixed(2) }}</div>
+                      <!-- Rental controls -->
+                      <div v-if="product.type === 'Rental'" class="mt-2">
+                        <div v-if="product.rentalStatus === 'Rented'" class="text-[10px] font-bold text-amber-600 dark:text-amber-400 text-center py-1">Currently Rented</div>
+                        <template v-else>
+                          <button @click="toggleRental(product.id)"
+                            :class="(cartQty[product.id] || 0) > 0 ? 'bg-[#004D40] text-white' : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200'"
+                            class="w-full py-1 rounded-lg text-[11px] font-bold transition-colors">
+                            {{ (cartQty[product.id] || 0) > 0 ? '✓ Reserved' : 'Reserve' }}
+                          </button>
+                          <div v-if="(cartQty[product.id] || 0) > 0" class="flex items-center gap-1 mt-1">
+                            <input v-model.number="cartDuration[product.id]" type="number" min="1" :max="product.maxDuration || 999"
+                              class="w-full text-center p-1 border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-xs font-bold" />
+                            <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ product.rateUnit }}s</span>
+                          </div>
+                        </template>
+                      </div>
+
+                      <!-- Regular +/- controls -->
+                      <div v-else class="flex items-center justify-between mt-2">
+                        <div class="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-600">
+                          <button @click="decrement(product.id)" :disabled="(cartQty[product.id] || 0) === 0"
+                            class="w-7 h-7 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-500 disabled:opacity-40 text-sm font-bold">−</button>
+                          <span class="w-7 text-center text-xs font-bold text-gray-700 dark:text-gray-200">{{ cartQty[product.id] || 0 }}</span>
+                          <button @click="increment(product.id)" :disabled="(cartQty[product.id] || 0) >= product.stock"
+                            class="w-7 h-7 flex items-center justify-center hover:bg-teal-50 dark:hover:bg-teal-900/30 text-gray-500 disabled:opacity-40 text-sm font-bold">+</button>
+                        </div>
+                        <span v-if="product.inventoryId" :class="getStockStatusClass(product.stock)" class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full">{{ getStockLabel(product.stock) }}</span>
+                        <span v-else class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">Available</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="mt-6 flex justify-between items-center">
-              <div class="text-sm font-bold text-gray-600 dark:text-gray-300">Total: RM {{ cartTotal.toFixed(2) }}</div>
-              <button @click="nextStep" :disabled="cartTotal === 0"
-                class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 px-8 rounded-lg shadow hover:bg-[#00695C] dark:hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed">
-                Next: Payment
-              </button>
+            <!-- RIGHT: order summary + payment -->
+            <div class="w-64 shrink-0 flex flex-col bg-gray-50 dark:bg-gray-900/40">
+              <div class="px-4 pt-4 pb-2 shrink-0">
+                <h4 class="font-bold text-gray-800 dark:text-white text-sm">Order Summary</h4>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ cartItems.length }} item(s)</p>
+              </div>
+
+              <!-- Cart items -->
+              <div class="flex-1 overflow-y-auto px-4 space-y-2 min-h-0">
+                <div v-if="cartItems.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500 text-xs">No items added yet.</div>
+                <div v-for="item in cartItems" :key="item.productId"
+                  class="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg px-2 py-2 border border-gray-100 dark:border-gray-700">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{{ item.name }}</div>
+                    <div class="text-[10px] text-gray-400">
+                      <span v-if="item.isRental">{{ item.duration }} {{ item.rateUnit }}(s)</span>
+                      <span v-else>x{{ item.qty }}</span>
+                    </div>
+                  </div>
+                  <div class="text-xs font-bold text-[#004D40] dark:text-teal-400 shrink-0">RM {{ item.subtotal.toFixed(2) }}</div>
+                </div>
+              </div>
+
+              <!-- Payment summary -->
+              <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0 space-y-3">
+                <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Payment Method</div>
+                <div class="grid grid-cols-3 gap-1">
+                  <button v-for="method in ['Cash', 'DuitNow', 'Card']" :key="method"
+                    @click="selectedPaymentMethod = method"
+                    :class="selectedPaymentMethod === method ? 'bg-[#004D40] text-white' : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600'"
+                    class="py-1.5 rounded-lg text-[10px] font-bold transition-all">{{ method }}</button>
+                </div>
+
+
+
+                <div class="space-y-1 text-sm">
+                  <div class="flex justify-between text-gray-500 dark:text-gray-400">
+                    <span>Subtotal</span><span>RM {{ cartTotal.toFixed(2) }}</span>
+                  </div>
+                  <div class="flex justify-between font-bold text-gray-800 dark:text-white text-base border-t border-gray-100 dark:border-gray-700 pt-1">
+                    <span>Total</span><span>RM {{ cartTotal.toFixed(2) }}</span>
+                  </div>
+                </div>
+
+                <button @click="handleProceedToPayment" :disabled="cartTotal === 0 || isSubmitting"
+                  class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                  {{ selectedPaymentMethod === 'Cash' ? (isSubmitting ? 'Processing...' : 'Confirm Cash Payment') : 'Proceed to Payment' }}
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Step 2: Payment -->
-          <div v-if="currentStep === 2" class="p-8 text-center">
-            <h4 class="font-bold text-gray-800 dark:text-white mb-1">Select Payment Method</h4>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">Total Due: <span class="font-bold text-gray-800 dark:text-white">RM {{ cartTotal.toFixed(2) }}</span></p>
-
-            <div class="flex gap-3 justify-center mb-6">
-              <button v-for="method in ['Cash', 'DuitNow', 'Card']" :key="method"
-                @click="selectedPaymentMethod = method"
-                :class="selectedPaymentMethod === method
-                  ? 'bg-[#004D40] text-white border-[#004D40]'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-[#4DB6AC]'"
-                class="px-5 py-2 rounded-lg border font-bold text-sm transition-all">
-                {{ method }}
+          <!-- Step 2: Payment Waiting State (DuitNow / Card) -->
+          <div v-if="currentStep === 2" class="p-12 flex flex-col items-center justify-center h-full bg-gray-50 dark:bg-gray-900/50 overflow-y-auto">
+            <h4 class="text-2xl font-black text-gray-800 dark:text-white tracking-tight mb-2">Awaiting Payment</h4>
+            <p class="text-gray-500 dark:text-gray-400 mb-8 font-medium">Total Due: <span class="text-gray-900 dark:text-white font-bold text-xl">RM {{ cartTotal.toFixed(2) }}</span></p>
+            
+            <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center max-w-sm w-full">
+              <!-- DuitNow State -->
+              <template v-if="selectedPaymentMethod === 'DuitNow'">
+                <div class="w-full aspect-square bg-gray-50 dark:bg-gray-900 rounded-xl mb-6 p-4 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-700">
+                  <img v-if="duitnowQrUrl" :src="duitnowQrUrl" class="w-full h-full object-contain" alt="DuitNow QR" />
+                  <div v-else class="text-center text-gray-400 text-sm font-bold">No QR Code uploaded</div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm font-medium mb-6 text-center">Please ask the customer to scan the DuitNow QR above.</p>
+              </template>
+              
+              <!-- Card State -->
+              <template v-if="selectedPaymentMethod === 'Card'">
+                <div class="w-32 h-32 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                  <svg class="w-16 h-16 text-indigo-500 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm font-medium mb-6 text-center">Please tap or insert the card into the payment terminal.</p>
+              </template>
+              
+              <button @click="confirmPayment" :disabled="isSubmitting"
+                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-60 text-lg">
+                {{ isSubmitting ? 'Processing...' : 'Payment Received' }}
+              </button>
+              
+              <button @click="currentStep = 1" :disabled="isSubmitting"
+                class="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                Cancel / Change Method
               </button>
             </div>
-
-            <div v-if="selectedPaymentMethod === 'DuitNow'" class="mb-6">
-              <img v-if="duitnowQrUrl" :src="duitnowQrUrl"
-                class="w-48 h-48 mx-auto object-contain rounded-xl border border-gray-200 dark:border-gray-600 bg-white p-2"
-                alt="DuitNow QR" />
-              <div v-else
-                class="w-40 h-40 mx-auto bg-pink-50 dark:bg-pink-900/20 border-4 border-dashed border-pink-200 dark:border-pink-800 rounded-xl flex flex-col items-center justify-center gap-2">
-                <svg class="w-10 h-10 text-pink-300 dark:text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span class="text-[10px] font-bold text-pink-400 dark:text-pink-500 uppercase tracking-wide">No QR uploaded</span>
-                <span class="text-[9px] text-pink-300 dark:text-pink-700">Add one in Business Settings</span>
-              </div>
-            </div>
-
-            <button @click="confirmPayment" :disabled="isSubmitting"
-              class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-lg shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-60">
-              {{ isSubmitting ? 'Saving...' : 'Confirm Payment Received' }}
-            </button>
           </div>
 
           <!-- Step 3: Receipt -->
@@ -561,10 +631,27 @@ const receiptData = computed(() => {
                 <span>RM {{ (receiptData.total || 0).toFixed(2) }}</span>
               </div>
             </div>
-            <button @click="closeModal"
-              class="mt-6 w-full bg-gray-800 dark:bg-gray-700 text-white font-bold py-2 rounded-lg hover:bg-gray-900 dark:hover:bg-gray-600">
-              {{ isViewMode ? 'Close' : 'Done' }}
-            </button>
+            
+            <!-- Receipt Actions -->
+            <div class="mt-6 flex flex-col gap-3 max-w-sm mx-auto w-full">
+              <div class="flex gap-3">
+                <button @click="printReceipt"
+                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                  Print
+                </button>
+                <button @click="shareReceipt"
+                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                  Share
+                </button>
+              </div>
+              
+              <button @click="closeModal"
+                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-lg shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors mt-2 text-lg">
+                Done
+              </button>
+            </div>
           </div>
 
         </div>

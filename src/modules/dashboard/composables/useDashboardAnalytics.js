@@ -1,28 +1,47 @@
 import { computed } from 'vue'
 import { useSalesStore } from '../../sales/stores/sales'
 import { useCustomersStore } from '../../customer/stores/customers'
+import { useFinanceStore } from '../../finance/stores/finance'
+import { useInventoryStore } from '../../inventory/stores/inventory'
 
 export function useDashboardAnalytics() {
     const salesStore = useSalesStore()
     const customersStore = useCustomersStore()
+    const financeStore = useFinanceStore()
+    const inventoryStore = useInventoryStore()
 
     const toDate = (ts) => {
         if (!ts) return null
         return ts.toDate ? ts.toDate() : new Date(ts)
     }
 
+    // ─── KPI 1: Total Revenue (all paid orders) ───────────────────────
     const totalRevenue = computed(() =>
         salesStore.orders
             .filter(o => o.paymentStatus === 'Paid')
             .reduce((acc, o) => acc + (o.total || 0), 0)
     )
 
+    // ─── KPI 2: Net Profit (Income − Expenses) ────────────────────────
+    const netProfit = computed(() =>
+        financeStore.totalIncome - financeStore.totalExpenses
+    )
+
+    // ─── KPI 3: Total Orders ──────────────────────────────────────────
     const totalOrders = computed(() => salesStore.orders.length)
 
+    // ─── KPI 4: Low Stock Alerts (stock < 10 and > 0) ────────────────
+    const lowStockCount = computed(() =>
+        inventoryStore.items.filter(i => i.stock > 0 && i.stock < 10).length
+    )
+    const outOfStockCount = computed(() =>
+        inventoryStore.items.filter(i => i.stock === 0).length
+    )
+
+    // (keep for backwards compat)
     const openOrders = computed(() =>
         salesStore.orders.filter(o => o.status === 'Processing').length
     )
-
     const newCustomersThisMonth = computed(() => {
         const start = new Date()
         start.setDate(1)
@@ -33,15 +52,15 @@ export function useDashboardAnalytics() {
         }).length
     })
 
-    // Last 6 months revenue
-    const salesByMonthData = computed(() => {
+    // ─── CHART 1: Monthly Revenue vs Expenses (last 6 months) ─────────
+    const revenueVsExpensesData = computed(() => {
         const now = new Date()
         const months = Array.from({ length: 6 }, (_, i) => {
             const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
             return { label: d.toLocaleString('default', { month: 'short' }), year: d.getFullYear(), month: d.getMonth() }
         })
 
-        const sales = months.map(m =>
+        const revenue = months.map(m =>
             salesStore.orders
                 .filter(o => {
                     const d = toDate(o.createdAt)
@@ -50,10 +69,43 @@ export function useDashboardAnalytics() {
                 .reduce((acc, o) => acc + (o.total || 0), 0)
         )
 
-        return { labels: months.map(m => m.label), sales }
+        const expenses = months.map(m =>
+            financeStore.allExpenses
+                .filter(e => {
+                    const d = toDate(e.date)
+                    return d && d.getFullYear() === m.year && d.getMonth() === m.month
+                })
+                .reduce((acc, e) => acc + (e.amount || 0), 0)
+        )
+
+        return { labels: months.map(m => m.label), revenue, expenses }
     })
 
-    // Top 5 products by revenue
+    // ─── CHART 2: Daily Sales Trend (last 14 days) ────────────────────
+    const dailySalesTrendData = computed(() => {
+        const days = Array.from({ length: 14 }, (_, i) => {
+            const d = new Date()
+            d.setDate(d.getDate() - (13 - i))
+            d.setHours(0, 0, 0, 0)
+            return d
+        })
+
+        const totals = days.map(day => {
+            const next = new Date(day)
+            next.setDate(next.getDate() + 1)
+            return salesStore.orders
+                .filter(o => {
+                    const d = toDate(o.createdAt)
+                    return d && d >= day && d < next && o.paymentStatus === 'Paid'
+                })
+                .reduce((acc, o) => acc + (o.total || 0), 0)
+        })
+
+        const labels = days.map(d => d.toLocaleString('default', { month: 'short', day: 'numeric' }))
+        return { labels, data: totals }
+    })
+
+    // ─── CHART 3: Top 5 Products by Revenue ───────────────────────────
     const salesByProductData = computed(() => {
         const map = {}
         salesStore.orders
@@ -71,13 +123,42 @@ export function useDashboardAnalytics() {
         }
     })
 
-    // Current week Mon-Sun order counts
+    // ─── CHART 4: Order Status Distribution ───────────────────────────
+    const orderStatusData = computed(() => {
+        const statuses = ['Paid', 'Processing', 'Active', 'Cancelled']
+        const counts = statuses.map(s =>
+            salesStore.orders.filter(o => (o.paymentStatus === s) || (o.status === s)).length
+        )
+        return { labels: statuses, data: counts }
+    })
+
+    // ─── CHART 5: Top 8 Inventory Items by Stock ──────────────────────
+    const inventoryStockData = computed(() => {
+        const items = [...inventoryStore.items]
+            .filter(i => i.name)
+            .sort((a, b) => (b.stock || 0) - (a.stock || 0))
+            .slice(0, 8)
+        return {
+            labels: items.map(i => i.name),
+            data: items.map(i => i.stock || 0),
+            colors: items.map(i => {
+                if (i.stock === 0) return '#ef4444'
+                if (i.stock < 10) return '#f59e0b'
+                return '#059669'
+            })
+        }
+    })
+
+    // (kept for backwards compat)
+    const salesByMonthData = computed(() => ({
+        labels: revenueVsExpensesData.value.labels,
+        sales: revenueVsExpensesData.value.revenue
+    }))
     const weeklyOrdersData = computed(() => {
         const now = new Date()
         const monday = new Date(now)
         monday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
         monday.setHours(0, 0, 0, 0)
-
         const counts = [0, 0, 0, 0, 0, 0, 0]
         salesStore.orders.forEach(o => {
             const d = toDate(o.createdAt)
@@ -85,17 +166,26 @@ export function useDashboardAnalytics() {
             const idx = Math.floor((d - monday) / 86400000)
             if (idx >= 0 && idx < 7) counts[idx]++
         })
-
         return { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], data: counts }
     })
 
     return {
+        // KPIs
         totalRevenue,
+        netProfit,
         totalOrders,
+        lowStockCount,
+        outOfStockCount,
         openOrders,
         newCustomersThisMonth,
-        salesByMonthData,
+        // Charts
+        revenueVsExpensesData,
+        dailySalesTrendData,
         salesByProductData,
-        weeklyOrdersData
+        orderStatusData,
+        inventoryStockData,
+        // backwards compat
+        salesByMonthData,
+        weeklyOrdersData,
     }
 }
