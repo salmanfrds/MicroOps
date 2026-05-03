@@ -8,6 +8,31 @@ const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
 const toastStore = useToastStore()
 
+const isViewAllModalOpen = ref(false)
+
+const sortedProducts = computed(() => {
+  return [...products.value].sort((a, b) => {
+    const getMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : 0;
+    const timeA = getMs(a.updatedAt) || getMs(a.createdAt) || 0;
+    const timeB = getMs(b.updatedAt) || getMs(b.createdAt) || 0;
+    return timeB - timeA;
+  })
+})
+
+const searchQuery = ref('')
+const typeFilter = ref('')
+
+const tableProducts = computed(() => sortedProducts.value.slice(0, 15))
+
+const filteredProducts = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  const t = typeFilter.value
+  let list = sortedProducts.value
+  if (q) list = list.filter(p => (p.name || '').toLowerCase().includes(q))
+  if (t) list = list.filter(p => p.type === t)
+  return list
+})
+
 const products = computed(() => {
     return productsStore.items.map(item => {
         let typeClass = 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
@@ -200,7 +225,7 @@ const handleDelete = async () => {
         
         <button 
           @click="openAddModal"
-          class="bg-indigo-600 dark:bg-indigo-500 text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors flex items-center gap-2"
+          class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors flex items-center gap-2"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
@@ -208,6 +233,12 @@ const handleDelete = async () => {
           Add Item
         </button>
       </header>
+
+      <div class="mb-4 flex justify-between items-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Showing latest 15 entries.</p>
+        <span @click="isViewAllModalOpen = true" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Products</span>
+      </div>
+
 
       <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto border border-gray-100 dark:border-gray-700 transition-colors">
         <table class="w-full text-left border-collapse">
@@ -222,7 +253,7 @@ const handleDelete = async () => {
           </thead>
           <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
             <tr 
-              v-for="product in products" 
+              v-for="product in tableProducts" 
               :key="product.id" 
               @click="openEditModal(product)"
               class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
@@ -274,13 +305,13 @@ const handleDelete = async () => {
               <td class="p-4 text-right">
                   <button 
                     @click.stop="openEditModal(product)"
-                    class="text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800 font-bold text-xs py-1.5 px-3 rounded-lg transition-colors"
+                    class="text-[#004D40] dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 border border-transparent hover:border-teal-200 dark:hover:border-teal-800 font-bold text-xs py-1.5 px-3 rounded-lg transition-colors"
                   >
                     Edit
                   </button>
               </td>
             </tr>
-            <tr v-if="products.length === 0">
+            <tr v-if="tableProducts.length === 0">
                 <td colspan="5" class="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">
                     No products added yet.
                 </td>
@@ -291,11 +322,11 @@ const handleDelete = async () => {
     </div>
 
     <Teleport to="body">
-      <div v-if="isAddModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="isAddModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeAddModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
-            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-indigo-50 dark:bg-indigo-900/20 flex justify-between items-center">
-                <h3 class="text-xl font-bold text-indigo-900 dark:text-indigo-400">Add Sellable Item</h3>
+            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Add Sellable Item</h3>
                 <button @click="closeAddModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold leading-none">&times;</button>
             </div>
 
@@ -309,7 +340,7 @@ const handleDelete = async () => {
                                 v-for="type in productTypes"
                                 :key="type"
                                 @click="addForm.type = type"
-                                :class="addForm.type === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                :class="addForm.type === type ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
                                 class="px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none"
                             >
                                 {{ type }}
@@ -337,26 +368,26 @@ const handleDelete = async () => {
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Billing Unit</label>
                             <div class="flex gap-2">
-                                <button @click="addForm.rateUnit = 'hour'" :class="addForm.rateUnit === 'hour' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
-                                <button @click="addForm.rateUnit = 'day'" :class="addForm.rateUnit === 'day' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
+                                <button @click="addForm.rateUnit = 'hour'" :class="addForm.rateUnit === 'hour' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
+                                <button @click="addForm.rateUnit = 'day'" :class="addForm.rateUnit === 'day' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
                             </div>
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Max Duration ({{ addForm.rateUnit === 'hour' ? 'hrs' : 'days' }})</label>
-                            <input v-model="addForm.maxDuration" type="number" min="1" :placeholder="addForm.rateUnit === 'hour' ? 'e.g. 48' : 'e.g. 7'" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                            <input v-model="addForm.maxDuration" type="number" min="1" :placeholder="addForm.rateUnit === 'hour' ? 'e.g. 48' : 'e.g. 7'" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Category</label>
-                            <select v-model="addForm.category" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
+                            <select v-model="addForm.category" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
                                 <option v-for="cat in productCategories" :key="cat" :value="cat">{{ cat }}</option>
                             </select>
                         </div>
                         <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'">
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
-                            <select v-model="addForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
+                            <select v-model="addForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
                                 <option value="" disabled>-- Select Inventory --</option>
                                 <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
                             </select>
@@ -365,20 +396,20 @@ const handleDelete = async () => {
 
                     <div class="pt-2 flex gap-3">
                         <button @click="closeAddModal" class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button @click="handleAddProduct" class="flex-1 py-3 px-4 rounded-lg bg-indigo-600 dark:bg-indigo-500 text-white font-bold shadow-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors">Save {{ addForm.type }}</button>
+                        <button @click="handleAddProduct" class="flex-1 py-3 px-4 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors">Save {{ addForm.type }}</button>
                     </div>
                 </div>
 
                 <!-- Image upload — right -->
                 <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
                     <button type="button" @click="addImageInput.click()"
-                        class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors cursor-pointer relative group overflow-hidden">
+                        class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors cursor-pointer relative group overflow-hidden">
                         <img v-if="addImagePreview" :src="addImagePreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
                         <template v-if="!addImagePreview">
-                            <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 font-medium text-center px-3 leading-relaxed">Click to upload product image</span>
+                            <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-teal-500 font-medium text-center px-3 leading-relaxed">Click to upload product image</span>
                         </template>
                         <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
                             <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
@@ -394,11 +425,11 @@ const handleDelete = async () => {
         </div>
       </div>
 
-      <div v-if="isEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="isEditModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeEditModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
-            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-indigo-50 dark:bg-indigo-900/20 flex justify-between items-center">
-                <h3 class="text-xl font-bold text-indigo-900 dark:text-indigo-400">Edit Sellable Item</h3>
+            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Edit Sellable Item</h3>
                 <button @click="closeEditModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold leading-none">&times;</button>
             </div>
 
@@ -412,7 +443,7 @@ const handleDelete = async () => {
                                 v-for="type in productTypes"
                                 :key="type"
                                 @click="editForm.type = type"
-                                :class="editForm.type === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                :class="editForm.type === type ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
                                 class="px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none"
                             >
                                 {{ type }}
@@ -422,17 +453,17 @@ const handleDelete = async () => {
 
                     <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                        <input v-model="editForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                        <input v-model="editForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">SKU (Optional)</label>
-                            <input v-model="editForm.sku" type="text" placeholder="COF-001" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none uppercase text-gray-700 dark:text-white transition-shadow">
+                            <input v-model="editForm.sku" type="text" placeholder="COF-001" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none uppercase text-gray-700 dark:text-white transition-shadow">
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ editForm.type === 'Rental' ? 'Rate (RM)' : 'Price (RM)' }}</label>
-                            <input v-model="editForm.price" type="number" placeholder="0.00" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                            <input v-model="editForm.price" type="number" placeholder="0.00" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
 
@@ -440,13 +471,13 @@ const handleDelete = async () => {
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Billing Unit</label>
                             <div class="flex gap-2">
-                                <button @click="editForm.rateUnit = 'hour'" :class="editForm.rateUnit === 'hour' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
-                                <button @click="editForm.rateUnit = 'day'" :class="editForm.rateUnit === 'day' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
+                                <button @click="editForm.rateUnit = 'hour'" :class="editForm.rateUnit === 'hour' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
+                                <button @click="editForm.rateUnit = 'day'" :class="editForm.rateUnit === 'day' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'" class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
                             </div>
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Max Duration ({{ editForm.rateUnit === 'hour' ? 'hrs' : 'days' }})</label>
-                            <input v-model="editForm.maxDuration" type="number" min="1" :placeholder="editForm.rateUnit === 'hour' ? 'e.g. 48' : 'e.g. 7'" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                            <input v-model="editForm.maxDuration" type="number" min="1" :placeholder="editForm.rateUnit === 'hour' ? 'e.g. 48' : 'e.g. 7'" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
 
@@ -469,7 +500,7 @@ const handleDelete = async () => {
                     <div class="pt-2 flex gap-3">
                         <button @click="handleDelete" class="py-3 px-4 rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 font-bold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">Delete</button>
                         <button @click="closeEditModal" class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button @click="handleUpdateProduct" class="flex-1 py-3 px-4 rounded-lg bg-indigo-600 dark:bg-indigo-500 text-white font-bold shadow-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors">Save {{ editForm.type }}</button>
+                        <button @click="handleUpdateProduct" class="flex-1 py-3 px-4 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors">Save {{ editForm.type }}</button>
                     </div>
                 </div>
 
@@ -498,5 +529,103 @@ const handleDelete = async () => {
         </div>
       </div>
     </Teleport>
+
+    <!-- VIEW ALL MODAL -->
+    <Teleport to="body">
+      <div v-if="isViewAllModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="isViewAllModalOpen = false" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
+        <div class="relative bg-gray-50 dark:bg-gray-900 w-full max-w-6xl h-[90vh] rounded-xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-xl font-bold text-gray-800 dark:text-white">All Products</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Showing all sell-able items, services, and rentals.</p>
+            </div>
+            <button @click="isViewAllModalOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
+          </div>
+          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <input v-model="searchQuery" type="text" placeholder="Search by product name…" class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors" />
+              </div>
+              <select v-model="typeFilter" class="text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors">
+                <option value="">All Types</option>
+                <option value="Stocked">Stocked</option>
+                <option value="Prepared">Prepared</option>
+                <option value="Service">Service</option>
+                <option value="Rental">Rental</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="flex-1 overflow-auto p-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
+              <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 sticky top-0 z-10">
+                  <tr class="border-b border-gray-100 dark:border-gray-700">
+                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Product Info</th>
+                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Type</th>
+                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Price (RM)</th>
+                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Available Stock</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-gray-700 align-top">
+                  <tr v-if="filteredProducts.length === 0">
+                    <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No products found.</td>
+                  </tr>
+                  <tr v-for="item in filteredProducts" :key="item.id" @click="openEditModal(item)" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer">
+                    <td class="p-4">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 shadow-sm flex items-center justify-center">
+                          <img v-if="item.imageUrl" :src="item.imageUrl" alt="" class="w-full h-full object-cover" />
+                          <div v-else :class="[item.color, 'w-full h-full flex items-center justify-center font-bold text-xs']">
+                            {{ item.initials }}
+                          </div>
+                        </div>
+                        <div>
+                          <div class="font-bold text-gray-800 dark:text-white text-sm">{{ item.name }}</div>
+                          <div class="flex items-center gap-2 mt-0.5">
+                              <span class="text-xs text-gray-400 dark:text-gray-500 font-mono tracking-wide">SKU: {{ item.sku || 'N/A' }}</span>
+                              <span v-if="item.category" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ item.category }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="p-4">
+                      <span :class="item.typeClass" class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border border-transparent">
+                        {{ item.type }}
+                      </span>
+                    </td>
+                    <td class="p-4">
+                      <div class="flex items-baseline gap-1">
+                          <span class="font-bold text-gray-800 dark:text-white text-base">{{ (item.price || 0).toFixed(2) }}</span>
+                          <span v-if="item.type === 'Rental'" class="text-xs text-gray-400 dark:text-gray-500 font-medium">/ {{ item.rateUnit }}</span>
+                      </div>
+                    </td>
+                    <td class="p-4">
+                      <div v-if="item.type === 'Service'" class="text-gray-400 dark:text-gray-500 text-sm italic">—</div>
+                      <div v-else class="flex flex-col gap-1 items-start">
+                         <div class="flex items-center gap-2">
+                           <span class="font-bold text-gray-800 dark:text-white text-base">{{ item.currentStock }}</span>
+                           <span class="text-xs text-gray-400 dark:text-gray-500">units</span>
+                         </div>
+                         <span v-if="item.type === 'Rental' && item.rentalStatus" 
+                            :class="item.rentalStatus === 'Available' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' : 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'"
+                            class="px-2 py-0.5 text-[10px] font-bold uppercase rounded border border-transparent inline-flex items-center gap-1"
+                         >
+                            <span class="w-1.5 h-1.5 rounded-full" :class="item.rentalStatus === 'Available' ? 'bg-green-500' : 'bg-amber-500'"></span>
+                            {{ item.rentalStatus }}
+                         </span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </section>
 </template>

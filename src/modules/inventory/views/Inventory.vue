@@ -31,8 +31,40 @@ const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
   })
 
 // --- 1. CURRENT STOCK DATA ---
+const isViewAllModalOpen = ref(false)
+
+const sortedItems = computed(() => {
+  return [...inventoryStore.items].sort((a, b) => {
+    const getMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : 0;
+    const timeA = getMs(a.updatedAt) || getMs(a.createdAt) || 0;
+    const timeB = getMs(b.updatedAt) || getMs(b.createdAt) || 0;
+    return timeB - timeA;
+  })
+})
+
+const searchQuery = ref('')
+const statusFilter = ref('')
+
+const tableItems = computed(() => sortedItems.value.slice(0, 15))
+
+const filteredInventoryItems = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  const s = statusFilter.value
+  let list = inventoryItems.value
+  if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
+  if (s) list = list.filter(i => {
+    if (s === 'Low Stock') return i.stock > 0 && i.stock < 10
+    if (s === 'Out of Stock') return i.stock === 0
+    if (s === 'In Stock') return i.stock >= 10
+    if (s === 'Available') return i.rentalStatus === 'Available'
+    if (s === 'Rented') return i.rentalStatus !== 'Available'
+    return true
+  })
+  return list
+})
+
 const inventoryItems = computed(() => {
-  return inventoryStore.items.map(item => {
+  return sortedItems.value.map(item => {
     let status, statusClass, color
 
     if (item.type === 'RENTAL') {
@@ -89,6 +121,9 @@ const transactionLog = computed(() => {
         return timeB - timeA;
     })
 })
+
+const tableLogs = computed(() => transactionLog.value.slice(0, 15))
+const sortedLogs = computed(() => transactionLog.value)
 
 // --- ACTIONS & MODALS STATE ---
 const isAddModalOpen = ref(false)
@@ -288,7 +323,7 @@ const handleDeleteItem = async () => {
         
         <button 
           @click="openAddModal"
-          class="bg-[#4DB6AC] text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2"
+          class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
@@ -296,6 +331,12 @@ const handleDeleteItem = async () => {
           Add Item
         </button>
       </header>
+
+      <div class="mb-4 flex justify-between items-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">Showing latest 15 items.</p>
+        <span @click="isViewAllModalOpen = true" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Inventory</span>
+      </div>
+
 
       <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto border border-gray-100 dark:border-gray-700 transition-colors">
         <table class="w-full text-left border-collapse">
@@ -308,7 +349,10 @@ const handleDeleteItem = async () => {
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
-            <tr v-for="item in inventoryItems" :key="item.id" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors group">
+            <tr v-if="tableItems.length === 0">
+              <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No inventory items found.</td>
+            </tr>
+            <tr v-for="item in tableItems.map(i => inventoryItems.find(x => x.id === i.id) || i)" :key="item.id" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors group">
               
               <td class="p-4">
                 <div class="flex items-center gap-3">
@@ -356,12 +400,8 @@ const handleDeleteItem = async () => {
     </div>
 
     <div class="border-t border-dashed border-gray-200 dark:border-gray-700 pt-8">
-      <div class="mb-6 flex justify-between items-end">
-        <div>
-           <h3 class="text-xl font-bold text-gray-800 dark:text-white">Transaction History</h3>
-           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Log of stock adjustments and tracking.</p>
-        </div>
-        <span class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All History</span>
+      <div class="mb-4">
+         <p class="text-sm text-gray-500 dark:text-gray-400">Showing latest 15 transactions.</p>
       </div>
 
       <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto border border-gray-100 dark:border-gray-700 transition-colors">
@@ -376,7 +416,7 @@ const handleDeleteItem = async () => {
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
-            <tr v-for="log in transactionLog" :key="log.id" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors">
+            <tr v-for="log in tableLogs" :key="log.id" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors">
               <td class="p-4 align-top">
                 <div class="flex flex-col">
                    <span class="font-bold text-gray-800 dark:text-white text-sm tabular-nums">{{ log.date }}</span>
@@ -423,7 +463,7 @@ const handleDeleteItem = async () => {
 
     <!-- ADD MODAL -->
     <Teleport to="body">
-      <div v-if="isAddModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="isAddModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeAddModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
             <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
@@ -503,7 +543,7 @@ const handleDeleteItem = async () => {
 
                 <div class="pt-4 flex gap-3">
                     <button @click="closeAddModal" class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                    <button @click="handleAddProduct" class="flex-1 py-3 px-4 rounded-lg bg-[#4DB6AC] text-white font-bold shadow-lg hover:bg-[#26A69A] transition-colors">Save Item</button>
+                    <button @click="handleAddProduct" class="flex-1 py-3 px-4 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors">Save Item</button>
                 </div>
             </div>
 
@@ -536,14 +576,14 @@ const handleDeleteItem = async () => {
 
     <!-- EDIT MODAL -->
     <Teleport to="body">
-      <div v-if="isEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="isEditModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeEditModal" class="absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity"></div>
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden animate-fade-in-up transition-colors max-h-[90vh] flex flex-col">
             
-            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 flex justify-between items-center shrink-0">
+            <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center shrink-0">
                 <div>
-                   <h3 class="text-xl font-bold text-blue-900 dark:text-blue-400">Edit Inventory Item</h3>
-                   <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">Update details & adjust stock</p>
+                   <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Edit Inventory Item</h3>
+                   <p class="text-sm text-teal-700 dark:text-teal-400 mt-1">Update details & adjust stock</p>
                 </div>
                 <button @click="closeEditModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
             </div>
@@ -692,10 +732,96 @@ const handleDeleteItem = async () => {
                 </button>
                 <div class="flex gap-4">
                     <button @click="closeEditModal" class="py-2.5 px-6 rounded-lg text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                    <button @click="handleUpdateItem" class="py-2.5 px-8 rounded-lg bg-blue-600 text-white font-bold shadow-lg hover:bg-blue-700 transition-colors">Save Details & Adjust Stock</button>
+                    <button @click="handleUpdateItem" class="py-2.5 px-8 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors">Save Details & Adjust Stock</button>
                 </div>
             </div>
             
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- VIEW ALL MODAL -->
+    <Teleport to="body">
+      <div v-if="isViewAllModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="isViewAllModalOpen = false" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
+        <div class="relative bg-gray-50 dark:bg-gray-900 w-full max-w-5xl h-[90vh] rounded-xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-xl font-bold text-gray-800 dark:text-white">All Inventory</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Showing all stock items</p>
+            </div>
+            <button @click="isViewAllModalOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
+          </div>
+          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <input v-model="searchQuery" type="text" placeholder="Search by name or SKU…" class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC] transition-colors" />
+              </div>
+              <select v-model="statusFilter" class="text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC] transition-colors">
+                <option value="">All Status</option>
+                <option value="In Stock">In Stock</option>
+                <option value="Low Stock">Low Stock</option>
+                <option value="Out of Stock">Out of Stock</option>
+                <option value="Available">Available (Rental)</option>
+                <option value="Rented">Rented</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="flex-1 overflow-auto p-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+              <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 sticky top-0 z-10">
+                  <tr class="border-b border-gray-100 dark:border-gray-700">
+                    <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Item Details</th>
+                    <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Stock Level</th>
+                    <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+                  <tr v-if="filteredInventoryItems.length === 0">
+                    <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No inventory items found.</td>
+                  </tr>
+                  <tr v-for="item in filteredInventoryItems" :key="item.id" class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors group">
+                    <td class="p-4">
+                      <div class="flex items-center gap-3">
+                        <div :class="[item.color, 'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shadow-sm']">
+                          {{ item.initials }}
+                        </div>
+                        <div>
+                          <div class="font-bold text-gray-800 dark:text-white text-sm">{{ item.name }}</div>
+                          <div class="flex items-center gap-2 mt-0.5">
+                            <span class="text-xs text-gray-400 dark:text-gray-500 font-mono tracking-wide">SKU: {{ item.sku || 'N/A' }}</span>
+                            <span v-if="item.type" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ itemTypes.find(t => t.value === item.type)?.label || item.type }}</span>
+                            <span v-if="item.linkedProduct" class="text-[10px] text-teal-600 dark:text-teal-400 font-bold ml-1" title="Linked to Product">&#x1F517; {{ item.linkedProduct }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="p-4">
+                      <div class="flex items-center gap-2">
+                        <span class="font-bold text-gray-800 dark:text-white text-base">{{ item.stock }}</span>
+                        <span class="text-xs text-gray-400 dark:text-gray-500">units</span>
+                      </div>
+                    </td>
+                    <td class="p-4">
+                      <span :class="item.statusClass" class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border border-transparent">
+                        {{ item.status }}
+                      </span>
+                    </td>
+                    <td class="p-4 text-right">
+                      <button @click="openEditModal(item)"
+                        class="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 hover:border-blue-400 font-bold text-xs py-1.5 px-4 rounded-lg transition-colors">
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </Teleport>

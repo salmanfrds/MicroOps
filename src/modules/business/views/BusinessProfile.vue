@@ -262,8 +262,8 @@ onMounted(async () => {
 
 <template>
   <section class="max-w-6xl mx-auto pb-20">
-    <header class="mb-8">
-      <div class="flex items-center gap-5">
+    <header class="mb-6">
+      <div class="flex items-center gap-5 mb-4">
         <!-- Business Logo Display + Upload -->
         <div class="relative group shrink-0">
           <button type="button" @click="logoInput.click()" title="Click to change logo"
@@ -284,17 +284,14 @@ onMounted(async () => {
 
         <div>
           <h2 class="text-3xl font-bold text-gray-800 dark:text-white">{{ business.name || 'Business Settings' }}</h2>
-          <p class="mt-1 text-gray-500 dark:text-gray-400 text-sm">Click the logo to upload your business photo.</p>
+          <p class="mt-2 text-gray-600 dark:text-gray-400 mb-4">Click the logo to upload your business photo.</p>
         </div>
       </div>
 
-      <!-- Save button below logo and title -->
-      <div class="flex items-center gap-3 mt-5">
-        <button @click="saveProfile" :disabled="saving"
-          class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2.5 px-8 rounded-lg shadow hover:bg-[#003d33] dark:hover:bg-teal-600 transition-all active:scale-95 disabled:opacity-60">
-          {{ saving ? 'Saving...' : 'Save Details' }}
-        </button>
-      </div>
+      <button @click="saveProfile" :disabled="saving"
+        class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2.5 px-8 rounded-lg shadow hover:bg-[#003d33] dark:hover:bg-teal-600 transition-all active:scale-95 disabled:opacity-60">
+        {{ saving ? 'Saving...' : 'Save Details' }}
+      </button>
     </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -403,7 +400,7 @@ onMounted(async () => {
       <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
         <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Staff Management (Profiles)</h3>
         <button @click="openAddStaffModal"
-          class="text-sm bg-[#4DB6AC] text-white px-4 py-2 rounded-lg hover:bg-[#26A69A] transition-colors">
+          class="text-sm bg-[#004D40] dark:bg-teal-700 text-white px-4 py-2 rounded-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors font-bold">
           + Add New Staff
         </button>
       </div>
@@ -451,8 +448,8 @@ onMounted(async () => {
     <Teleport to="body">
       <div v-if="isAddStaffModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
         <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-xl overflow-hidden">
-          <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-            <h3 class="text-xl font-bold text-gray-800 dark:text-white">Create Staff Profile</h3>
+          <div class="p-5 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
+            <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Create Staff Profile</h3>
             <button @click="isAddStaffModalOpen = false" class="text-gray-400 hover:text-gray-800 dark:hover:text-white text-2xl leading-none">&times;</button>
           </div>
           <div class="p-6 space-y-4">
@@ -474,7 +471,7 @@ onMounted(async () => {
                 class="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none focus:border-[#4DB6AC] tracking-widest text-center text-xl font-bold" />
             </div>
             <button @click="handleAddStaff"
-              class="w-full mt-4 bg-[#4DB6AC] text-white font-bold py-2 rounded-lg hover:bg-[#26A69A] transition-colors">
+              class="w-full mt-4 bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 rounded-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors">
               Add Staff Profile
             </button>
           </div>

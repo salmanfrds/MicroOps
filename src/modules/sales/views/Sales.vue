@@ -33,6 +33,29 @@ const selectedOrder = ref(null)
 const selectedPaymentMethod = ref('Cash')
 const selectedCustomerId = ref('')
 const isSubmitting = ref(false)
+const isViewAllModalOpen = ref(false)
+
+const sortedOrders = computed(() => {
+  return [...salesStore.orders].sort((a, b) => {
+    const getMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : 0;
+    const timeA = getMs(a.updatedAt) || getMs(a.createdAt);
+    const timeB = getMs(b.updatedAt) || getMs(b.createdAt);
+    return timeB - timeA;
+  })
+})
+
+const searchQuery = ref('')
+
+const tableOrders = computed(() => sortedOrders.value.slice(0, 15))
+
+const filteredOrders = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return sortedOrders.value
+  return sortedOrders.value.filter(o =>
+    (o.orderNumber || '').toLowerCase().includes(q) ||
+    (o.customerName || '').toLowerCase().includes(q)
+  )
+})
 
 // Cart: products with qty added
 // Note: VueFire sets 'id' as non-enumerable, so it must be copied explicitly after spread
@@ -267,25 +290,28 @@ const receiptData = computed(() => {
 </script>
 
 <template>
-  <section>
-    <header class="mb-8">
-      <div>
-        <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Sales & Order Management</h2>
-        <p class="mt-2 text-gray-600 dark:text-gray-400">Track customer orders from quotation to final invoice.</p>
-      </div>
-      <div class="mt-5">
-        <button @click="openNewOrderModal"
-          class="bg-[#4DB6AC] hover:bg-[#26A69A] text-white font-bold py-2 px-6 rounded-lg shadow transition-colors flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-          </svg>
-          New Order
-        </button>
-      </div>
+  <section class="space-y-12">
+    <header class="mb-6">
+      <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Sales & Order Management</h2>
+      <p class="mt-2 text-gray-600 dark:text-gray-400 mb-4">Track customer orders from quotation to final invoice.</p>
+      
+      <button @click="openNewOrderModal"
+        class="bg-[#004D40] dark:bg-teal-700 hover:bg-[#00695C] dark:hover:bg-teal-600 text-white font-bold py-2 px-6 rounded-lg shadow transition-colors flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+        </svg>
+        New Order
+      </button>
     </header>
 
     <!-- Orders Table -->
-    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto transition-colors">
+    <div class="mb-4 flex justify-between items-center">
+      <p class="text-sm text-gray-500 dark:text-gray-400">Showing latest 15 orders.</p>
+      <span @click="isViewAllModalOpen = true" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Orders</span>
+    </div>
+
+    
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto border border-gray-100 dark:border-gray-700 transition-colors">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="border-b border-gray-100 dark:border-gray-700">
@@ -297,10 +323,10 @@ const receiptData = computed(() => {
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
-          <tr v-if="salesStore.orders.length === 0">
+          <tr v-if="tableOrders.length === 0">
             <td colspan="5" class="p-8 text-center text-gray-400 dark:text-gray-500">No orders yet. Create your first order!</td>
           </tr>
-          <tr v-for="order in salesStore.orders" :key="order.id"
+          <tr v-for="order in tableOrders" :key="order.id"
             class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors">
             <td class="p-4">
               <div class="font-bold text-gray-800 dark:text-gray-200 font-mono">{{ order.orderNumber }}</div>
@@ -348,19 +374,19 @@ const receiptData = computed(() => {
 
     <!-- Modal -->
     <Teleport to="body">
-      <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="isModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeModal" class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
 
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden transition-colors">
 
           <!-- Modal Header -->
-          <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700/50">
+          <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-teal-50 dark:bg-teal-900/20">
             <div>
-              <h3 class="text-lg font-bold text-gray-800 dark:text-white">
+              <h3 class="text-lg font-bold text-[#004D40] dark:text-teal-300">
                 {{ isViewMode ? 'Order Details' : 'New Transaction' }}
               </h3>
-              <p v-if="!isViewMode" class="text-xs text-gray-500 dark:text-gray-400">Step {{ currentStep }} of 3</p>
-              <p v-else class="text-xs text-gray-500 dark:text-gray-400">View Only</p>
+              <p v-if="!isViewMode" class="text-xs text-teal-700 dark:text-teal-400">Step {{ currentStep }} of 3</p>
+              <p v-else class="text-xs text-teal-700 dark:text-teal-400">View Only</p>
             </div>
             <button @click="closeModal" class="text-gray-400 hover:text-red-500 text-2xl font-bold leading-none">&times;</button>
           </div>
@@ -471,7 +497,7 @@ const receiptData = computed(() => {
             <div class="mt-6 flex justify-between items-center">
               <div class="text-sm font-bold text-gray-600 dark:text-gray-300">Total: RM {{ cartTotal.toFixed(2) }}</div>
               <button @click="nextStep" :disabled="cartTotal === 0"
-                class="bg-[#4DB6AC] text-white font-bold py-2 px-8 rounded-lg shadow hover:bg-[#26A69A] disabled:opacity-50 disabled:cursor-not-allowed">
+                class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 px-8 rounded-lg shadow hover:bg-[#00695C] dark:hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed">
                 Next: Payment
               </button>
             </div>
@@ -544,5 +570,79 @@ const receiptData = computed(() => {
         </div>
       </div>
     </Teleport>
+
+    <!-- VIEW ALL MODAL -->
+    <Teleport to="body">
+      <div v-if="isViewAllModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="isViewAllModalOpen = false" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
+        <div class="relative bg-gray-50 dark:bg-gray-900 w-full max-w-6xl h-[90vh] rounded-xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-xl font-bold text-gray-800 dark:text-white">All Sales Orders</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Showing all historical orders</p>
+            </div>
+            <button @click="isViewAllModalOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
+          </div>
+          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+            <div class="relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input v-model="searchQuery" type="text" placeholder="Search by order # or customer…" class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC] transition-colors" />
+            </div>
+          </div>
+          
+          <div class="flex-1 overflow-auto p-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
+              <table class="w-full text-left text-sm whitespace-nowrap">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th class="p-4 font-medium tracking-wider">Date & Time</th>
+                    <th class="p-4 font-medium tracking-wider">Customer / Ref</th>
+                    <th class="p-4 font-medium tracking-wider">Items</th>
+                    <th class="p-4 font-medium tracking-wider">Total (RM)</th>
+                    <th class="p-4 font-medium tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50 dark:divide-gray-700/50">
+                  <tr v-for="order in filteredOrders" :key="order.id" @click="viewReceipt(order)"
+                    class="hover:bg-gray-50/80 dark:hover:bg-gray-700/50 transition-colors cursor-pointer group">
+                    <td class="p-4">
+                      <div class="font-medium text-gray-800 dark:text-gray-200">{{ formatDate(order.createdAt) }}</div>
+                    </td>
+                    <td class="p-4">
+                      <div class="flex items-center gap-3">
+                        <div :class="[getAvatarColor(order.customerName || 'Walk-in'), 'w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs']">
+                          {{ getInitials(order.customerName || 'W I') }}
+                        </div>
+                        <div>
+                          <div class="font-medium text-gray-800 dark:text-gray-200">{{ order.customerName || 'Walk-in Customer' }}</div>
+                          <div class="text-xs text-gray-400 font-mono mt-0.5">#{{ order.id.substring(0, 8) }}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="p-4 text-gray-600 dark:text-gray-400">
+                      {{ countItems(order.items) }} item(s)
+                    </td>
+                    <td class="p-4">
+                      <div class="font-bold text-gray-800 dark:text-gray-200">RM {{ (order.total || 0).toFixed(2) }}</div>
+                    </td>
+                    <td class="p-4">
+                      <div class="flex flex-col gap-1 items-start">
+                        <span :class="getStatusColor(order.status)" class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border border-transparent">
+                          {{ order.status }}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredOrders.length === 0">
+                    <td colspan="5" class="p-8 text-center text-gray-500 dark:text-gray-400">No orders found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </section>
 </template>

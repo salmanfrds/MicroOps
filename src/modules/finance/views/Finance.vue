@@ -10,6 +10,16 @@ const financeStore = useFinanceStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
 
+const viewAllType = ref(null) // 'income' | 'expense' | null
+
+const tableIncome = computed(() => {
+  return financeStore.allIncome.slice(0, 15)
+})
+
+const tableExpenses = computed(() => {
+  return financeStore.allExpenses.slice(0, 15)
+})
+
 const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
   new Promise((resolve) => {
     const reader = new FileReader()
@@ -193,10 +203,13 @@ const originLabel = (origin) => {
           <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-emerald-500"></div> Income
           </h3>
-          <button @click="openModal('income')"
-            class="text-sm font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors">
-            + Add New
-          </button>
+          <div class="flex items-center gap-4">
+            <span @click="viewAllType = 'income'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Income</span>
+            <button @click="openModal('income')"
+              class="text-sm font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors">
+              + Add New
+            </button>
+          </div>
         </div>
 
         <div class="overflow-x-auto flex-1">
@@ -210,10 +223,10 @@ const originLabel = (origin) => {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-              <tr v-if="financeStore.allIncome.length === 0">
+              <tr v-if="tableIncome.length === 0">
                 <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No income records yet.</td>
               </tr>
-              <tr v-for="item in financeStore.allIncome" :key="item.id"
+              <tr v-for="item in tableIncome" :key="item.id"
                 @click="openDetail(item)"
                 class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
@@ -253,10 +266,13 @@ const originLabel = (origin) => {
           <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-red-500"></div> Expenses
           </h3>
-          <button @click="openModal('expense')"
-            class="text-sm font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg transition-colors">
-            + Add New
-          </button>
+          <div class="flex items-center gap-4">
+            <span @click="viewAllType = 'expense'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Expenses</span>
+            <button @click="openModal('expense')"
+              class="text-sm font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg transition-colors">
+              + Add New
+            </button>
+          </div>
         </div>
 
         <div class="overflow-x-auto flex-1">
@@ -270,10 +286,10 @@ const originLabel = (origin) => {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-              <tr v-if="financeStore.allExpenses.length === 0">
+              <tr v-if="tableExpenses.length === 0">
                 <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No expense records yet.</td>
               </tr>
-              <tr v-for="item in financeStore.allExpenses" :key="item.id"
+              <tr v-for="item in tableExpenses" :key="item.id"
                 @click="openDetail(item)"
                 class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
@@ -311,7 +327,7 @@ const originLabel = (origin) => {
 
     <!-- DETAIL MODAL -->
     <Teleport to="body">
-      <div v-if="selectedEntry" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="selectedEntry" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeDetail" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"></div>
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden">
 
@@ -410,7 +426,7 @@ const originLabel = (origin) => {
 
     <!-- MODAL -->
     <Teleport to="body">
-      <div v-if="activeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="activeModal" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"></div>
 
         <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden">
@@ -506,5 +522,83 @@ const originLabel = (origin) => {
         </div>
       </div>
     </Teleport>
+
+    <!-- VIEW ALL MODAL -->
+    <Teleport to="body">
+      <div v-if="viewAllType" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="viewAllType = null" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
+        <div class="relative bg-gray-50 dark:bg-gray-900 w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
+            <div class="flex items-center gap-3">
+              <div :class="viewAllType === 'income' ? 'bg-emerald-500' : 'bg-red-500'" class="w-2.5 h-2.5 rounded-full"></div>
+              <div>
+                <h3 class="text-xl font-bold text-gray-800 dark:text-white">
+                  {{ viewAllType === 'income' ? 'All Income' : 'All Expenses' }}
+                </h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  {{ viewAllType === 'income' ? financeStore.allIncome.length : financeStore.allExpenses.length }} records
+                </p>
+              </div>
+            </div>
+            <button @click="viewAllType = null" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
+          </div>
+
+          <div class="flex-1 overflow-auto p-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 sticky top-0 z-10">
+                  <tr class="border-b border-gray-100 dark:border-gray-700">
+                    <th class="p-4 font-medium">Date</th>
+                    <th class="p-4 font-medium">Category / Details</th>
+                    <th class="p-4 font-medium text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700 align-top">
+                  <!-- INCOME -->
+                  <template v-if="viewAllType === 'income'">
+                    <tr v-if="financeStore.allIncome.length === 0">
+                      <td colspan="3" class="p-8 text-center text-gray-400 dark:text-gray-500">No income records yet.</td>
+                    </tr>
+                    <tr v-for="item in financeStore.allIncome" :key="item.id" @click="openDetail(item)" class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                      <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
+                          <span v-if="originLabel(item.origin)" class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
+                            {{ originLabel(item.origin) }}
+                          </span>
+                        </div>
+                        <div v-if="item.remarks" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-words">{{ item.remarks }}</div>
+                      </td>
+                      <td class="p-4 text-right text-emerald-600 dark:text-emerald-400 font-bold whitespace-nowrap">+{{ formatMoney(item.amount) }}</td>
+                    </tr>
+                  </template>
+                  <!-- EXPENSES -->
+                  <template v-if="viewAllType === 'expense'">
+                    <tr v-if="financeStore.allExpenses.length === 0">
+                      <td colspan="3" class="p-8 text-center text-gray-400 dark:text-gray-500">No expense records yet.</td>
+                    </tr>
+                    <tr v-for="item in financeStore.allExpenses" :key="item.id" @click="openDetail(item)" class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                      <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
+                          <span v-if="originLabel(item.origin)" class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
+                            {{ originLabel(item.origin) }}
+                          </span>
+                        </div>
+                        <div v-if="item.remarks" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-words">{{ item.remarks }}</div>
+                      </td>
+                      <td class="p-4 text-right text-red-500 dark:text-red-400 font-bold whitespace-nowrap">-{{ formatMoney(item.amount) }}</td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </section>
 </template>
