@@ -28,17 +28,39 @@ export const useInventoryStore = defineStore('inventory', () => {
         return bizId
     }
 
-    // Add new raw inventory item
-    const addInventoryItem = async (itemData) => {
+    const addInventoryItem = async (itemData, logTransaction = true, loggedBy = null) => {
         try {
             const bizId = getBizId()
             const collRef = collection(db, `businesses/${bizId}/inventory`)
-            await addDoc(collRef, {
+
+            const initialStock = Number(itemData.stock) || 0
+            const unitCost    = Number(itemData.cost)  || 0
+
+            const itemRef = await addDoc(collRef, {
                 ...itemData,
-                stock: Number(itemData.stock) || 0,
-                cost: Number(itemData.cost) || 0,
+                stock: initialStock,
+                cost: unitCost,
                 createdAt: serverTimestamp()
             })
+
+            let txRef = null
+            if (logTransaction && initialStock > 0) {
+                const txCollRef = collection(db, `businesses/${bizId}/transactions`)
+                txRef = await addDoc(txCollRef, {
+                    itemId:        itemRef.id,
+                    type:          'IN',
+                    amount:        initialStock,
+                    costPerUnit:   unitCost,
+                    total:         initialStock * unitCost,
+                    remark:        'Initial stock entry',
+                    loggedByName:  loggedBy?.name || null,
+                    loggedById:    loggedBy?.id || null,
+                    date:          new Date().toISOString().split('T')[0],
+                    createdAt:     serverTimestamp()
+                })
+            }
+
+            return { itemRef, txRef }
         } catch (error) {
             console.error('Error adding inventory item:', error)
             throw error
@@ -74,15 +96,11 @@ export const useInventoryStore = defineStore('inventory', () => {
     }
 
     // Adjust Stock (IN or OUT) and log Transaction
-    const adjustStock = async (itemId, type, amount, costPerUnit, remark = '') => {
+    const adjustStock = async (itemId, type, amount, costPerUnit, remark = '', loggedBy = null) => {
         try {
             const bizId = getBizId()
             const itemDoc = doc(db, `businesses/${bizId}/inventory`, itemId)
-
-            // Calculate total cost
             const total = Number(amount) * Number(costPerUnit)
-
-            // Update stock level (add for IN, subtract for OUT)
             const stockDelta = type === 'IN' ? Number(amount) : -Number(amount)
 
             await updateDoc(itemDoc, {
@@ -90,20 +108,43 @@ export const useInventoryStore = defineStore('inventory', () => {
                 updatedAt: serverTimestamp()
             })
 
-            // Log Transaction
             const txCollRef = collection(db, `businesses/${bizId}/transactions`)
-            await addDoc(txCollRef, {
+            const txRef = await addDoc(txCollRef, {
                 itemId,
-                type,               // 'IN' or 'OUT'
+                type,
                 amount: Number(amount),
                 costPerUnit: Number(costPerUnit),
-                total,              // Computed total
+                total,
                 remark,
+                loggedByName: loggedBy?.name || null,
+                loggedById: loggedBy?.id || null,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: serverTimestamp()
             })
+            return txRef
         } catch (error) {
             console.error('Error recording stock adjustment:', error)
+            throw error
+        }
+    }
+
+    const updateTransactionReceipt = async (txId, receiptUrl) => {
+        try {
+            const bizId = getBizId()
+            await updateDoc(doc(db, `businesses/${bizId}/transactions`, txId), { receiptUrl })
+        } catch (error) {
+            console.error('Error updating transaction receipt:', error)
+            throw error
+        }
+    }
+
+    const setRentalStatus = async (itemId, rentalStatus) => {
+        try {
+            const bizId = getBizId()
+            const itemDoc = doc(db, `businesses/${bizId}/inventory`, itemId)
+            await updateDoc(itemDoc, { rentalStatus, updatedAt: serverTimestamp() })
+        } catch (error) {
+            console.error('Error updating rental status:', error)
             throw error
         }
     }
@@ -114,6 +155,8 @@ export const useInventoryStore = defineStore('inventory', () => {
         addInventoryItem,
         updateInventoryItem,
         deleteInventoryItem,
-        adjustStock
+        adjustStock,
+        updateTransactionReceipt,
+        setRentalStatus
     }
 })

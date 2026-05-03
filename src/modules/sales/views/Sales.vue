@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useSalesStore } from '../stores/sales'
 import { useProductsStore } from '../../products/stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
@@ -37,15 +37,26 @@ const isSubmitting = ref(false)
 // Cart: products with qty added
 // Note: VueFire sets 'id' as non-enumerable, so it must be copied explicitly after spread
 const cart = computed(() =>
-  productsStore.items.map(p => ({
-    ...p,
-    id: p.id,
-    qty: cartQty.value[p.id] || 0,
-    stock: getProductStock(p)
-  }))
+  productsStore.items.map(p => {
+    const invItem = p.inventoryId ? inventoryStore.items.find(i => i.id === p.inventoryId) : null
+    return {
+      ...p,
+      id: p.id,
+      qty: cartQty.value[p.id] || 0,
+      stock: getProductStock(p),
+      rentalStatus: p.type === 'Rental' ? (invItem?.rentalStatus || 'Available') : null
+    }
+  })
 )
 
 const cartQty = ref({})
+const cartDuration = ref({})
+const now = ref(Date.now())
+const completingOrders = ref(new Set())
+
+let clockInterval = null
+onMounted(() => { clockInterval = setInterval(() => { now.value = Date.now() }, 1000) })
+onUnmounted(() => clearInterval(clockInterval))
 
 const getProductStock = (product) => {
   if (product.inventoryId) {
@@ -68,16 +79,40 @@ const decrement = (productId) => {
   if (current > 0) cartQty.value[productId] = current - 1
 }
 
+const toggleRental = (productId) => {
+  const current = cartQty.value[productId] || 0
+  cartQty.value[productId] = current > 0 ? 0 : 1
+  if (!cartDuration.value[productId]) cartDuration.value[productId] = 1
+}
+
 const cartItems = computed(() =>
-  cart.value.filter(p => p.qty > 0).map(p => ({
-    productId: p.id,
-    inventoryId: p.inventoryId || null,
-    name: p.name,
-    sku: p.sku,
-    qty: p.qty,
-    price: p.price,
-    subtotal: p.qty * p.price
-  }))
+  cart.value.filter(p => (cartQty.value[p.id] || 0) > 0).map(p => {
+    if (p.type === 'Rental') {
+      const duration = cartDuration.value[p.id] || 1
+      return {
+        productId: p.id,
+        inventoryId: p.inventoryId || null,
+        name: p.name,
+        sku: p.sku,
+        qty: 1,
+        price: p.price,
+        rateUnit: p.rateUnit || 'hour',
+        duration,
+        subtotal: p.price * duration,
+        isRental: true
+      }
+    }
+    return {
+      productId: p.id,
+      inventoryId: p.inventoryId || null,
+      name: p.name,
+      sku: p.sku,
+      qty: p.qty,
+      price: p.price,
+      subtotal: p.qty * p.price,
+      isRental: false
+    }
+  })
 )
 
 const cartTotal = computed(() => cartItems.value.reduce((acc, i) => acc + i.subtotal, 0))
@@ -108,12 +143,41 @@ const getAvatarColor = (name = '') => {
 
 const getStatusColor = (status) => {
   switch (status) {
-    case 'Completed': return 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
+    case 'Completed':  return 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
     case 'Processing': return 'text-yellow-800 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30'
+    case 'Active':     return 'text-blue-800 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30'
     case 'Cancelled':  return 'text-red-800 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
     default:           return 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700'
   }
 }
+
+const getRentalCountdown = (order) => {
+  const rentalItems = (order.items || []).filter(i => i.isRental && i.rentalEndAt)
+  if (!rentalItems.length) return null
+  const endAt = rentalItems[0].rentalEndAt
+  const endMs = endAt?.toDate ? endAt.toDate().getTime() : Number(endAt)
+  const remaining = endMs - now.value
+  if (remaining <= 0) return { expired: true, label: 'Time Up' }
+  const h = Math.floor(remaining / 3600000)
+  const m = Math.floor((remaining % 3600000) / 60000)
+  const s = Math.floor((remaining % 60000) / 1000)
+  return { expired: false, label: h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s` }
+}
+
+watch(now, async () => {
+  for (const order of salesStore.orders) {
+    if (order.status !== 'Active' || completingOrders.value.has(order.id)) continue
+    const countdown = getRentalCountdown(order)
+    if (countdown?.expired) {
+      completingOrders.value.add(order.id)
+      try {
+        await salesStore.completeRentalOrder(order.id, order.items || [])
+      } finally {
+        completingOrders.value.delete(order.id)
+      }
+    }
+  }
+})
 
 const getStockStatusClass = (stock) => {
   if (stock <= 0)  return 'text-red-800 dark:text-red-400 bg-red-200 dark:bg-red-900/40'
@@ -141,6 +205,7 @@ const openNewOrderModal = () => {
   selectedCustomerId.value = ''
   selectedPaymentMethod.value = 'Cash'
   cartQty.value = {}
+  cartDuration.value = {}
   isModalOpen.value = true
 }
 
@@ -253,9 +318,16 @@ const receiptData = computed(() => {
               </div>
             </td>
             <td class="p-4">
-              <span :class="['px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide rounded-full', getStatusColor(order.status)]">
-                {{ order.status }}
-              </span>
+              <div class="flex flex-col items-start gap-1">
+                <span :class="['px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide rounded-full', getStatusColor(order.status)]">
+                  {{ order.status }}
+                </span>
+                <span v-if="order.status === 'Active' && getRentalCountdown(order)"
+                  :class="getRentalCountdown(order).expired ? 'text-red-500 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400'"
+                  class="text-xs font-mono font-bold tabular-nums">
+                  ⏱ {{ getRentalCountdown(order).label }}
+                </span>
+              </div>
             </td>
             <td class="p-4 text-right">
               <div class="font-bold text-gray-800 dark:text-gray-200">RM {{ (order.total || 0).toFixed(2) }}</div>
@@ -324,13 +396,52 @@ const receiptData = computed(() => {
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
+                  <div class="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 shrink-0">
+                    <img v-if="product.imageUrl" :src="product.imageUrl" class="w-full h-full object-cover" alt="" />
+                    <div v-else class="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400 dark:text-gray-500">
+                      {{ product.name?.charAt(0)?.toUpperCase() || '?' }}
+                    </div>
+                  </div>
                   <div class="min-w-0">
                     <div class="font-bold text-gray-800 dark:text-gray-200 text-sm truncate">{{ product.name }}</div>
                     <div class="text-xs text-gray-500 dark:text-gray-400">SKU: {{ product.sku }}</div>
                   </div>
                 </div>
 
-                <div class="flex items-center gap-3 shrink-0">
+                <!-- Rental product controls -->
+                <div v-if="product.type === 'Rental'" class="flex items-center gap-2 shrink-0">
+                  <!-- Already rented out -->
+                  <div v-if="product.rentalStatus === 'Rented'" class="flex items-center gap-2">
+                    <span class="px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
+                      Currently Rented
+                    </span>
+                  </div>
+
+                  <!-- Available to reserve -->
+                  <template v-else>
+                    <button @click.stop="toggleRental(product.id)"
+                      :class="product.qty > 0 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-indigo-400'"
+                      class="px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shrink-0">
+                      {{ product.qty > 0 ? '✓ Reserved' : 'Reserve' }}
+                    </button>
+                    <div v-if="product.qty > 0" class="flex items-center gap-1">
+                      <input v-model.number="cartDuration[product.id]" type="number" min="1" :max="product.maxDuration || 999"
+                        class="w-14 text-center p-1.5 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-bold text-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-indigo-400 outline-none" />
+                      <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ product.rateUnit }}s</span>
+                    </div>
+                  </template>
+
+                  <div class="text-right min-w-20">
+                    <span :class="product.rentalStatus === 'Rented' ? 'text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' : 'text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/30'"
+                      class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-block mb-1">
+                      {{ product.rentalStatus === 'Rented' ? 'Rented' : 'Rental' }}
+                    </span>
+                    <div class="text-sm font-bold text-[#004D40] dark:text-teal-400">RM {{ (product.price || 0).toFixed(2) }}/{{ product.rateUnit }}</div>
+                  </div>
+                </div>
+
+                <!-- Regular product controls -->
+                <div v-else class="flex items-center gap-3 shrink-0">
                   <div class="flex items-center border rounded bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 h-8 shadow-sm">
                     <button @click.stop="decrement(product.id)" :disabled="product.qty === 0"
                       class="w-7 h-full flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors text-gray-500 dark:text-gray-400 border-r dark:border-gray-600 disabled:opacity-50">

@@ -1,28 +1,63 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useInventoryStore } from '../stores/inventory'
 import { useProductsStore } from '../../products/stores/products'
+import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
+import { storage } from '../../../shared/lib/firebaseClient'
 
 const inventoryStore = useInventoryStore()
 const productsStore = useProductsStore()
+const authStore = useAuthStore()
 const toastStore = useToastStore()
+
+const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
+  new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => resolve(new File([blob], 'receipt.jpg', { type: 'image/jpeg' })), 'image/jpeg', quality)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
 
 // --- 1. CURRENT STOCK DATA ---
 const inventoryItems = computed(() => {
   return inventoryStore.items.map(item => {
-    let status = 'In Stock'
-    let statusClass = 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
-    let color = 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
-    
-    if (item.stock === 0) {
-      status = 'Out of Stock'
-      statusClass = 'text-red-800 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
-      color = 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300'
-    } else if (item.stock < 10) {
-      status = 'Low Stock'
-      statusClass = 'text-yellow-800 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30'
-      color = 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
+    let status, statusClass, color
+
+    if (item.type === 'RENTAL') {
+      const rs = item.rentalStatus || 'Available'
+      status = rs
+      statusClass = rs === 'Available'
+        ? 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
+        : 'text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30'
+      color = rs === 'Available'
+        ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+        : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+    } else {
+      status = 'In Stock'
+      statusClass = 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
+      color = 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+
+      if (item.stock === 0) {
+        status = 'Out of Stock'
+        statusClass = 'text-red-800 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
+        color = 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300'
+      } else if (item.stock < 10) {
+        status = 'Low Stock'
+        statusClass = 'text-yellow-800 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30'
+        color = 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
+      }
     }
 
     return {
@@ -60,53 +95,116 @@ const isAddModalOpen = ref(false)
 const isEditModalOpen = ref(false)
 
 // Forms
-const addForm = ref({ name: '', sku: '', stock: '', cost: '', type: 'CONSUMABLE', productId: '' })
-const editForm = ref({ id: '', name: '', sku: '', cost: '', type: 'CONSUMABLE', productId: '' })
-const stockForm = ref({ type: 'IN', amount: '', remark: '' })
-const itemTypes = ['RETAIL', 'RENTAL', 'CONSUMABLE']
+const addForm = ref({ name: '', sku: '', stock: '', cost: '', type: 'RAW_MATERIAL', productId: '' })
+const editForm = ref({ id: '', name: '', sku: '', cost: '', type: 'RAW_MATERIAL', productId: '' })
+const stockForm = ref({ type: 'IN', amount: '', unitCost: '', remark: '' })
+
+// Live cost calculations
+const addTotalCost = computed(() => {
+  const qty = Number(addForm.value.stock) || 0
+  const cost = Number(addForm.value.cost) || 0
+  return qty * cost
+})
+
+const stockTotalCost = computed(() => {
+  const qty = Number(stockForm.value.amount) || 0
+  const cost = Number(stockForm.value.unitCost) || 0
+  return qty * cost
+})
+const itemTypes = [
+  { value: 'RAW_MATERIAL',    label: 'Raw Material',    desc: 'Ingredients or inputs used in production' },
+  { value: 'FINISHED_GOODS',  label: 'Finished Goods',  desc: 'Completed products ready for sale' },
+  { value: 'CONSUMABLE',      label: 'Consumable',      desc: 'Supplies used in daily operations' },
+  { value: 'EQUIPMENT',       label: 'Equipment',       desc: 'Tools, machines or tracked assets' },
+  { value: 'PACKAGING',       label: 'Packaging',       desc: 'Boxes, bags or labels for shipping' },
+]
+
+const logInitialTransaction = ref(true)
 
 // Add Actions
-const openAddModal = () => isAddModalOpen.value = true
+const openAddModal = () => {
+    logInitialTransaction.value = true
+    addReceiptFile.value = null
+    addReceiptPreview.value = ''
+    isAddModalOpen.value = true
+}
 const closeAddModal = () => {
     isAddModalOpen.value = false
     addForm.value = { name: '', sku: '', stock: '', cost: '', type: 'CONSUMABLE', productId: '' }
+    logInitialTransaction.value = true
+    addReceiptFile.value = null
+    addReceiptPreview.value = ''
 }
 
 const handleAddProduct = async () => {
     if (!addForm.value.name) return
+    const imageFile = addReceiptFile.value
+    const loggedBy = authStore.user
+        ? { name: authStore.user.full_name || authStore.user.role, id: authStore.user.profileId }
+        : null
     const tid = toastStore.loading('Adding inventory item...')
-    let success = false
     try {
-        await inventoryStore.addInventoryItem(addForm.value)
-        success = true
+        const { txRef } = await inventoryStore.addInventoryItem(addForm.value, logInitialTransaction.value, loggedBy)
+
+        if (imageFile && txRef?.id) {
+            const bizId = authStore.user?.businessId
+            const compressed = await compressImage(imageFile)
+            const imgRef = storageRef(storage, `business/${bizId}/transactions/${txRef.id}/receipt.jpg`)
+            await uploadBytes(imgRef, compressed, { contentType: 'image/jpeg' })
+            const url = await getDownloadURL(imgRef)
+            await inventoryStore.updateTransactionReceipt(txRef.id, url)
+        }
+
+        toastStore.replace(tid, 'success', 'Inventory item added successfully')
+        closeAddModal()
     } catch (err) {
         console.error('Add inventory error:', err)
-    } finally {
-        if (success) {
-            toastStore.replace(tid, 'success', 'Inventory item added successfully')
-            closeAddModal()
-        } else {
-            toastStore.replace(tid, 'error', 'Failed to add item. Please try again.')
-        }
+        toastStore.replace(tid, 'error', 'Failed to add item. Please try again.')
     }
+}
+
+const addReceiptFile = ref(null)
+const addReceiptPreview = ref('')
+const addReceiptInput = ref(null)
+
+const receiptFile = ref(null)
+const receiptPreview = ref('')
+const receiptInput = ref(null)
+
+const handleAddReceiptUpload = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    addReceiptFile.value = file
+    addReceiptPreview.value = URL.createObjectURL(file)
+}
+
+const handleReceiptUpload = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    receiptFile.value = file
+    receiptPreview.value = URL.createObjectURL(file)
 }
 
 // Edit Actions
 const openEditModal = (item) => {
-    editForm.value = { 
-        id: item.id, 
-        name: item.name, 
-        sku: item.sku || '', 
-        cost: item.cost || '', 
-        type: item.type || 'CONSUMABLE', 
-        productId: item.productId || '' 
+    editForm.value = {
+        id: item.id,
+        name: item.name,
+        sku: item.sku || '',
+        cost: item.cost || '',
+        type: item.type || 'RAW_MATERIAL',
+        productId: item.productId || ''
     }
-    stockForm.value = { type: 'IN', amount: '', remark: '' }
+    stockForm.value = { type: 'IN', amount: '', unitCost: String(item.cost || ''), remark: '' }
+    receiptFile.value = null
+    receiptPreview.value = ''
     isEditModalOpen.value = true
 }
 
 const closeEditModal = () => {
     isEditModalOpen.value = false
+    receiptFile.value = null
+    receiptPreview.value = ''
 }
 
 const handleUpdateItem = async () => {
@@ -120,30 +218,40 @@ const handleUpdateItem = async () => {
         productId: editForm.value.productId || null
     }
 
+    const imageFile = receiptFile.value
     const tid = toastStore.loading('Saving details...')
-    let success = false
     try {
         await inventoryStore.updateInventoryItem(editForm.value.id, payload)
 
         if (stockForm.value.amount && Number(stockForm.value.amount) > 0) {
-            await inventoryStore.adjustStock(
+            const loggedBy = authStore.user
+                ? { name: authStore.user.full_name || authStore.user.role, id: authStore.user.profileId }
+                : null
+
+            const txRef = await inventoryStore.adjustStock(
                 editForm.value.id,
                 stockForm.value.type,
                 stockForm.value.amount,
-                payload.cost,
-                stockForm.value.remark || ''
+                Number(stockForm.value.unitCost) || payload.cost,
+                stockForm.value.remark || '',
+                loggedBy
             )
+
+            if (imageFile && txRef?.id) {
+                const bizId = authStore.user?.businessId
+                const compressed = await compressImage(imageFile)
+                const imgRef = storageRef(storage, `business/${bizId}/transactions/${txRef.id}/receipt.jpg`)
+                await uploadBytes(imgRef, compressed, { contentType: 'image/jpeg' })
+                const url = await getDownloadURL(imgRef)
+                await inventoryStore.updateTransactionReceipt(txRef.id, url)
+            }
         }
-        success = true
+
+        toastStore.replace(tid, 'success', 'Inventory item saved successfully')
+        closeEditModal()
     } catch (err) {
         console.error('Failed to execute save: ', err)
-    } finally {
-        if (success) {
-            toastStore.replace(tid, 'success', 'Inventory item saved successfully')
-            closeEditModal()
-        } else {
-            toastStore.replace(tid, 'error', 'Failed to save. Please try again.')
-        }
+        toastStore.replace(tid, 'error', 'Failed to save. Please try again.')
     }
 }
 
@@ -211,7 +319,7 @@ const handleDeleteItem = async () => {
                     <div class="font-bold text-gray-800 dark:text-white text-sm">{{ item.name }}</div>
                     <div class="flex items-center gap-2 mt-0.5">
                         <span class="text-xs text-gray-400 dark:text-gray-500 font-mono tracking-wide">SKU: {{ item.sku || 'N/A' }}</span>
-                        <span v-if="item.type" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ item.type }}</span>
+                        <span v-if="item.type" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ itemTypes.find(t => t.value === item.type)?.label || item.type }}</span>
                         <span v-if="item.linkedProduct" class="text-[10px] text-teal-600 dark:text-teal-400 font-bold ml-1" title="Linked to Product">&#x1F517; {{ item.linkedProduct }}</span>
                     </div>
                   </div>
@@ -317,25 +425,29 @@ const handleDeleteItem = async () => {
     <Teleport to="body">
       <div v-if="isAddModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div @click="closeAddModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
-        <div class="relative bg-white dark:bg-gray-800 w-full max-w-lg rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
             <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
                 <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-400">Add New Item</h3>
                 <button @click="closeAddModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold leading-none">&times;</button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="flex">
+            <div class="flex-1 p-6 space-y-4">
                 <div>
                      <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Item Type</label>
-                     <div class="flex flex-wrap gap-2">
+                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                          <button 
-                             v-for="type in itemTypes" 
-                             :key="type"
-                             @click="addForm.type = type"
-                             :class="addForm.type === type ? 'bg-[#4DB6AC] text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
-                             class="px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none"
+                             v-for="t in itemTypes" 
+                             :key="t.value"
+                             @click="addForm.type = t.value"
+                             :class="addForm.type === t.value ? 'bg-[#4DB6AC] text-white shadow-md ring-2 ring-[#4DB6AC]/40' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-teal-900/20 border border-gray-200 dark:border-gray-600'"
+                             class="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none text-left"
                          >
-                             {{ type }}
+                             {{ t.label }}
                          </button>
                      </div>
+                     <p class="mt-2 text-xs text-gray-400 dark:text-gray-500 italic">
+                         {{ itemTypes.find(t => t.value === addForm.type)?.desc }}
+                     </p>
                  </div>
 
                 <div>
@@ -366,11 +478,58 @@ const handleDeleteItem = async () => {
                         </select>
                     </div>
                 </div>
+
+                <!-- Total Initial Value -->
+                <div v-if="addTotalCost > 0" class="flex items-center justify-between bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg px-4 py-3">
+                    <span class="text-sm font-medium text-teal-700 dark:text-teal-300">Total Initial Stock Value</span>
+                    <span class="text-base font-bold text-teal-800 dark:text-teal-300 font-mono">RM {{ addTotalCost.toFixed(2) }}</span>
+                </div>
+
+                <!-- Log transaction toggle — only shown when stock > 0 -->
+                <div v-if="Number(addForm.stock) > 0"
+                    @click="logInitialTransaction = !logInitialTransaction"
+                    :class="logInitialTransaction ? 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800' : 'bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-600'"
+                    class="flex items-center justify-between border rounded-lg px-4 py-3 cursor-pointer select-none transition-colors">
+                    <div>
+                        <p :class="logInitialTransaction ? 'text-teal-800 dark:text-teal-300' : 'text-gray-600 dark:text-gray-400'" class="text-sm font-bold">Log as opening transaction</p>
+                        <p :class="logInitialTransaction ? 'text-teal-600 dark:text-teal-400' : 'text-gray-400 dark:text-gray-500'" class="text-xs mt-0.5">
+                            {{ logInitialTransaction ? 'Initial stock will appear in transaction history' : 'Initial stock will be set silently' }}
+                        </p>
+                    </div>
+                    <div :class="logInitialTransaction ? 'bg-teal-500' : 'bg-gray-300 dark:bg-gray-600'" class="relative w-10 h-6 rounded-full transition-colors shrink-0 ml-4">
+                        <span :class="logInitialTransaction ? 'translate-x-5' : 'translate-x-1'" class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"></span>
+                    </div>
+                </div>
+
                 <div class="pt-4 flex gap-3">
                     <button @click="closeAddModal" class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                     <button @click="handleAddProduct" class="flex-1 py-3 px-4 rounded-lg bg-[#4DB6AC] text-white font-bold shadow-lg hover:bg-[#26A69A] transition-colors">Save Item</button>
                 </div>
             </div>
+
+            <!-- Receipt upload — right -->
+            <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
+                <button type="button" @click="addReceiptInput.click()"
+                    class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-teal-50 dark:hover:bg-teal-900/10 transition-colors cursor-pointer relative group overflow-hidden">
+                    <img v-if="addReceiptPreview" :src="addReceiptPreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <template v-if="!addReceiptPreview">
+                        <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-teal-500 font-medium text-center px-3 leading-relaxed">Upload procurement receipt</span>
+                    </template>
+                    <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
+                        <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
+                    </div>
+                </button>
+                <div v-if="addReceiptPreview" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
+                    <button type="button" @click="addReceiptFile = null; addReceiptPreview = ''"
+                        class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove</button>
+                </div>
+                <input ref="addReceiptInput" type="file" class="hidden" accept="image/*" @change="handleAddReceiptUpload" />
+            </div>
+
+            </div><!-- end flex body -->
         </div>
       </div>
     </Teleport>
@@ -389,25 +548,31 @@ const handleDeleteItem = async () => {
                 <button @click="closeEditModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
             </div>
             
-            <div class="p-6 overflow-y-auto space-y-8 flex-1">
-                
+            <div class="flex flex-1 overflow-hidden">
+
+            <!-- Scrollable form — left -->
+            <div class="flex-1 p-6 overflow-y-auto space-y-8">
+
                 <!-- Section: Item Details -->
                 <div>
                     <h4 class="text-sm font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Item Details</h4>
                     <div class="space-y-4">
                         <div>
                              <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Item Type</label>
-                             <div class="flex flex-wrap gap-2">
+                             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                  <button 
-                                     v-for="type in itemTypes" 
-                                     :key="type"
-                                     @click="editForm.type = type"
-                                     :class="editForm.type === type ? 'bg-blue-500 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
-                                     class="px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none"
+                                     v-for="t in itemTypes" 
+                                     :key="t.value"
+                                     @click="editForm.type = t.value"
+                                     :class="editForm.type === t.value ? 'bg-blue-500 text-white shadow-md ring-2 ring-blue-400/40' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-600'"
+                                     class="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none text-left"
                                  >
-                                     {{ type }}
+                                     {{ t.label }}
                                  </button>
                              </div>
+                             <p class="mt-2 text-xs text-gray-400 dark:text-gray-500 italic">
+                                 {{ itemTypes.find(t => t.value === editForm.type)?.desc }}
+                             </p>
                          </div>
         
                         <div>
@@ -467,7 +632,24 @@ const handleDeleteItem = async () => {
                                  <input v-model="stockForm.amount" type="number" min="1" placeholder="0" class="w-full flex-1 p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-center font-mono text-lg font-bold text-gray-800 dark:text-white">
                              </div>
                          </div>
-                         
+
+                         <!-- Unit Cost for Stock IN -->
+                         <div v-if="stockForm.type === 'IN'" class="grid grid-cols-2 gap-4">
+                             <div>
+                                 <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Unit Cost (RM)</label>
+                                 <div class="relative">
+                                     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-bold text-sm">RM</span>
+                                     <input v-model="stockForm.unitCost" type="number" min="0" step="0.01" placeholder="0.00" class="w-full pl-10 p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none font-mono text-gray-800 dark:text-white">
+                                 </div>
+                                 <p class="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Leave unchanged to use stored cost</p>
+                             </div>
+                             <div v-if="stockTotalCost > 0" class="flex flex-col justify-center items-center bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-2.5">
+                                 <span class="text-[10px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wide">Total Stock-In Cost</span>
+                                 <span class="text-lg font-black text-blue-700 dark:text-blue-300 font-mono mt-0.5">RM {{ stockTotalCost.toFixed(2) }}</span>
+                                 <span class="text-[10px] text-blue-400 dark:text-blue-500">{{ stockForm.amount || 0 }} units × RM {{ Number(stockForm.unitCost || 0).toFixed(2) }}</span>
+                             </div>
+                         </div>
+
                          <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Remarks / Reason</label>
                             <input v-model="stockForm.remark" type="text" placeholder="e.g. Vendor delivery, damaged goods..." class="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-sm text-gray-700 dark:text-white">
@@ -477,6 +659,30 @@ const handleDeleteItem = async () => {
                 </div>
 
             </div>
+
+            <!-- Receipt upload — right -->
+            <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
+                <button type="button" @click="receiptInput.click()"
+                    class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors cursor-pointer relative group overflow-hidden">
+                    <img v-if="receiptPreview" :src="receiptPreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <template v-if="!receiptPreview">
+                        <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-blue-500 font-medium text-center px-3 leading-relaxed">Upload procurement receipt</span>
+                    </template>
+                    <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
+                        <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
+                    </div>
+                </button>
+                <div v-if="receiptPreview" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
+                    <button type="button" @click="receiptFile = null; receiptPreview = ''"
+                        class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove</button>
+                </div>
+                <input ref="receiptInput" type="file" class="hidden" accept="image/*" @change="handleReceiptUpload" />
+            </div>
+
+            </div><!-- end flex body -->
 
             <!-- Modal Footer -->
             <div class="p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex justify-between shrink-0">

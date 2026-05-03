@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed } from 'vue'
-import { collection, addDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { useCollection } from 'vuefire'
 import { db } from '../../../shared/lib/firebaseClient'
 import { useAuthStore } from '../../auth/stores/auth'
@@ -61,7 +61,9 @@ export const useFinanceStore = defineStore('finance', () => {
                 date: tx.date || tsToDateStr(tx.createdAt),
                 origin: 'stock_in',
                 readonly: true,
-                createdAt: tx.createdAt
+                createdAt: tx.createdAt,
+                loggedByName: tx.loggedByName || null,
+                receiptUrl: tx.receiptUrl || null
             }))
     )
 
@@ -99,16 +101,24 @@ export const useFinanceStore = defineStore('finance', () => {
         return bizId
     }
 
-    const addLedgerEntry = async ({ type, category, remarks, amount, date }) => {
+    const addLedgerEntry = async ({ type, category, remarks, amount, date, loggedBy = null }) => {
         const bizId = getBizId()
-        await addDoc(collection(db, `businesses/${bizId}/ledger`), {
+        const docRef = await addDoc(collection(db, `businesses/${bizId}/ledger`), {
             type,
             category,
             remarks: remarks || '',
             amount: Number(amount),
             date,
+            loggedByName: loggedBy?.name || null,
+            loggedById: loggedBy?.id || null,
             createdAt: serverTimestamp()
         })
+        return docRef
+    }
+
+    const updateLedgerEntry = async (entryId, updates) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/ledger`, entryId), updates)
     }
 
     const deleteLedgerEntry = async (entryId) => {
@@ -123,6 +133,7 @@ export const useFinanceStore = defineStore('finance', () => {
         totalExpenses,
         totalBalance,
         addLedgerEntry,
+        updateLedgerEntry,
         deleteLedgerEntry
     }
 })

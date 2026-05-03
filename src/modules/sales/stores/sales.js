@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed } from 'vue'
-import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { useCollection } from 'vuefire'
 import { db } from '../../../shared/lib/firebaseClient'
 import { useAuthStore } from '../../auth/stores/auth'
@@ -26,28 +26,54 @@ export const useSalesStore = defineStore('sales', () => {
         const bizId = getBizId()
         const total = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
         const orderNumber = `#${Date.now().toString().slice(-5)}`
+        const hasRentals = items.some(i => i.isRental)
+        const nowMs = Date.now()
+
+        const processedItems = items.map(item => {
+            if (item.isRental) {
+                const durationMs = item.rateUnit === 'day'
+                    ? item.duration * 86400000
+                    : item.duration * 3600000
+                return {
+                    ...item,
+                    rentalStartAt: Timestamp.fromMillis(nowMs),
+                    rentalEndAt: Timestamp.fromMillis(nowMs + durationMs)
+                }
+            }
+            return item
+        })
 
         await addDoc(collection(db, `businesses/${bizId}/orders`), {
             orderNumber,
             customerName: customerName || 'Walk-in Customer',
             customerId: customerId || null,
-            items,
+            items: processedItems,
             total,
-            status: 'Processing',
+            status: hasRentals ? 'Active' : 'Processing',
+            hasRentals,
             paymentMethod: paymentMethod || 'Cash',
             paymentStatus: 'Paid',
             createdAt: serverTimestamp()
         })
 
         for (const item of items) {
-            if (item.inventoryId) {
-                await inventoryStore.adjustStock(
-                    item.inventoryId,
-                    'OUT',
-                    item.qty,
-                    0,
-                    `Sale ${orderNumber}`
-                )
+            if (item.isRental && item.inventoryId) {
+                await inventoryStore.setRentalStatus(item.inventoryId, 'Rented')
+            } else if (item.inventoryId) {
+                await inventoryStore.adjustStock(item.inventoryId, 'OUT', item.qty, 0, `Sale ${orderNumber}`)
+            }
+        }
+    }
+
+    const completeRentalOrder = async (orderId, items) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/orders`, orderId), {
+            status: 'Completed',
+            completedAt: serverTimestamp()
+        })
+        for (const item of items) {
+            if (item.isRental && item.inventoryId) {
+                await inventoryStore.setRentalStatus(item.inventoryId, 'Available')
             }
         }
     }
@@ -58,5 +84,5 @@ export const useSalesStore = defineStore('sales', () => {
         await updateDoc(orderDoc, { status, updatedAt: serverTimestamp() })
     }
 
-    return { orders, createOrder, updateOrderStatus }
+    return { orders, createOrder, completeRentalOrder, updateOrderStatus }
 })

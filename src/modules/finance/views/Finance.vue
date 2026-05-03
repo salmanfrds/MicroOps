@@ -1,10 +1,32 @@
 <script setup>
 import { ref, computed, reactive } from 'vue'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useFinanceStore } from '../stores/finance'
+import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
+import { storage } from '../../../shared/lib/firebaseClient'
 
 const financeStore = useFinanceStore()
+const authStore = useAuthStore()
 const toastStore = useToastStore()
+
+const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
+  new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => resolve(new File([blob], 'receipt.jpg', { type: 'image/jpeg' })), 'image/jpeg', quality)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
 
 // --- CATEGORY LISTS ---
 const incomeCategories = ['Service Income', 'Investment Returns', 'Rental Income', 'Refunds Received', 'Other Income']
@@ -13,7 +35,7 @@ const expenseCategories = ['Bills & Utilities', 'Rent / Mortgage', 'Salaries', '
 // --- MODAL STATE ---
 const activeModal = ref(null)
 const isSubmitting = ref(false)
-const fileInput = ref(null)
+const receiptInput = ref(null)
 
 const form = reactive({
   date: new Date().toISOString().split('T')[0],
@@ -38,57 +60,70 @@ const openModal = (type) => {
 
 const closeModal = () => { activeModal.value = null }
 
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    form.receipt = file
-    form.receiptPreview = URL.createObjectURL(file)
-  }
+const handleReceiptUpload = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  form.receipt = file
+  form.receiptPreview = URL.createObjectURL(file)
 }
+
+const selectedEntryId = ref(null)
+const selectedEntry = computed(() => {
+  if (!selectedEntryId.value) return null
+  return [...financeStore.allIncome, ...financeStore.allExpenses]
+    .find(e => e.id === selectedEntryId.value) ?? null
+})
+
+const openDetail = (item) => { selectedEntryId.value = item.id }
+const closeDetail = () => { selectedEntryId.value = null }
 
 const saveRecord = async () => {
   const finalCategory = form.selectedCategory === 'NEW' ? form.customCategory.trim() : form.selectedCategory
   if (!finalCategory || !form.amount || isSubmitting.value) return
   isSubmitting.value = true
   const tid = toastStore.loading('Saving record...')
-  let success = false
   try {
-    await financeStore.addLedgerEntry({
+    const loggedBy = authStore.user
+      ? { name: authStore.user.full_name || authStore.user.role, id: authStore.user.profileId }
+      : null
+    const docRef = await financeStore.addLedgerEntry({
       type: activeModal.value,
       category: finalCategory,
       remarks: form.remarks,
       amount: parseFloat(form.amount),
-      date: form.date
+      date: form.date,
+      loggedBy
     })
-    success = true
+
+    if (form.receipt && docRef?.id) {
+      const bizId = authStore.user?.businessId
+      const compressed = await compressImage(form.receipt)
+      const imgRef = storageRef(storage, `business/${bizId}/transactions/${docRef.id}/receipt.jpg`)
+      await uploadBytes(imgRef, compressed, { contentType: 'image/jpeg' })
+      const url = await getDownloadURL(imgRef)
+      await financeStore.updateLedgerEntry(docRef.id, { receiptUrl: url })
+    }
+
+    toastStore.replace(tid, 'success', 'Record saved successfully')
+    closeModal()
   } catch (err) {
     console.error('Failed to save record:', err)
+    toastStore.replace(tid, 'error', 'Failed to save record. Please try again.')
   } finally {
     isSubmitting.value = false
-    if (success) {
-      toastStore.replace(tid, 'success', 'Record saved successfully')
-      closeModal()
-    } else {
-      toastStore.replace(tid, 'error', 'Failed to save record. Please try again.')
-    }
   }
 }
 
 const deleteEntry = async (entry) => {
   if (entry.readonly) return
   const tid = toastStore.loading('Deleting entry...')
-  let success = false
   try {
     await financeStore.deleteLedgerEntry(entry.id)
-    success = true
+    toastStore.replace(tid, 'success', 'Entry deleted')
+    closeDetail()
   } catch (err) {
     console.error('Delete entry error:', err)
-  } finally {
-    if (success) {
-      toastStore.replace(tid, 'success', 'Entry deleted')
-    } else {
-      toastStore.replace(tid, 'error', 'Failed to delete entry. Please try again.')
-    }
+    toastStore.replace(tid, 'error', 'Failed to delete entry. Please try again.')
   }
 }
 
@@ -179,7 +214,8 @@ const originLabel = (origin) => {
                 <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No income records yet.</td>
               </tr>
               <tr v-for="item in financeStore.allIncome" :key="item.id"
-                class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors">
+                @click="openDetail(item)"
+                class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
                 <td class="p-4">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -197,7 +233,7 @@ const originLabel = (origin) => {
                   +{{ formatMoney(item.amount) }}
                 </td>
                 <td class="p-4 text-center">
-                  <button v-if="!item.readonly" @click="deleteEntry(item)"
+                  <button v-if="!item.readonly" @click.stop="deleteEntry(item)"
                     class="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded"
                     title="Delete entry">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -238,7 +274,8 @@ const originLabel = (origin) => {
                 <td colspan="4" class="p-8 text-center text-gray-400 dark:text-gray-500">No expense records yet.</td>
               </tr>
               <tr v-for="item in financeStore.allExpenses" :key="item.id"
-                class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors">
+                @click="openDetail(item)"
+                class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
                 <td class="p-4">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -256,7 +293,7 @@ const originLabel = (origin) => {
                   -{{ formatMoney(item.amount) }}
                 </td>
                 <td class="p-4 text-center">
-                  <button v-if="!item.readonly" @click="deleteEntry(item)"
+                  <button v-if="!item.readonly" @click.stop="deleteEntry(item)"
                     class="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded"
                     title="Delete entry">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -272,12 +309,111 @@ const originLabel = (origin) => {
 
     </div>
 
+    <!-- DETAIL MODAL -->
+    <Teleport to="body">
+      <div v-if="selectedEntry" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div @click="closeDetail" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"></div>
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden">
+
+          <!-- Header -->
+          <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-start">
+            <div>
+              <div class="flex items-center gap-3 mb-2">
+                <span :class="selectedEntry.type === 'income'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'"
+                  class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                  {{ selectedEntry.type }}
+                </span>
+                <span class="font-bold text-gray-800 dark:text-white text-lg">{{ selectedEntry.category }}</span>
+              </div>
+              <div :class="selectedEntry.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'"
+                class="text-3xl font-black font-mono tabular-nums">
+                {{ selectedEntry.type === 'income' ? '+' : '−' }}{{ formatMoney(selectedEntry.amount) }}
+              </div>
+            </div>
+            <button @click="closeDetail" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="flex">
+            <!-- Details — left -->
+            <div class="flex-1 p-6 space-y-5">
+              <div>
+                <p class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Date</p>
+                <p class="text-gray-800 dark:text-white font-medium">{{ formatDate(selectedEntry.date) }}</p>
+              </div>
+
+              <div v-if="selectedEntry.remarks">
+                <p class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Remarks</p>
+                <p class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">{{ selectedEntry.remarks }}</p>
+              </div>
+
+              <div>
+                <p class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Logged By</p>
+                <p v-if="selectedEntry.loggedByName" class="text-gray-800 dark:text-white font-medium">{{ selectedEntry.loggedByName }}</p>
+                <p v-else-if="selectedEntry.origin === 'sale'" class="text-gray-500 dark:text-gray-400 text-sm italic">Auto — Sales system</p>
+                <p v-else class="text-gray-400 dark:text-gray-500 text-sm italic">Not recorded</p>
+              </div>
+
+              <div v-if="originLabel(selectedEntry.origin)">
+                <p class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Source</p>
+                <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
+                  {{ originLabel(selectedEntry.origin) }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Receipt — right -->
+            <div class="w-56 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
+              <div v-if="selectedEntry.receiptUrl" class="flex-1 relative overflow-hidden bg-gray-50 dark:bg-gray-900/40">
+                <img :src="selectedEntry.receiptUrl" class="absolute inset-0 w-full h-full object-contain p-2" alt="Receipt" />
+              </div>
+              <div v-else class="flex-1 flex flex-col items-center justify-center gap-2 bg-gray-50 dark:bg-gray-700/30">
+                <svg class="w-10 h-10 text-gray-200 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span class="text-xs text-gray-300 dark:text-gray-600 font-medium text-center px-4 leading-relaxed">No receipt attached</span>
+              </div>
+              <div v-if="selectedEntry.receiptUrl" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
+                <a :href="selectedEntry.receiptUrl" target="_blank"
+                  class="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 font-medium transition-colors">
+                  Open full size ↗
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-between items-center">
+            <button v-if="!selectedEntry.readonly" @click="deleteEntry(selectedEntry)"
+              class="text-red-500 hover:text-red-700 dark:text-red-400 font-bold text-sm flex items-center gap-1.5 transition-colors">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete Entry
+            </button>
+            <div v-else></div>
+            <button @click="closeDetail"
+              class="py-2 px-6 rounded-lg text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              Close
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </Teleport>
+
     <!-- MODAL -->
     <Teleport to="body">
       <div v-if="activeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div @click="closeModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"></div>
 
-        <div class="relative bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-2xl overflow-hidden">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden">
 
           <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
             <h3 class="text-lg font-bold text-gray-800 dark:text-white">{{ modalConfig.title }}</h3>
@@ -288,89 +424,82 @@ const originLabel = (origin) => {
             </button>
           </div>
 
-          <div class="p-6 space-y-5">
-            <!-- Date -->
-            <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Transaction Date</label>
-              <input v-model="form.date" type="date"
-                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all text-gray-700 dark:text-white" />
-            </div>
+          <div class="flex">
+            <!-- Form — left -->
+            <div class="flex-1 p-6 space-y-5">
+              <!-- Date -->
+              <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Transaction Date</label>
+                <input v-model="form.date" type="date"
+                  class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all text-gray-700 dark:text-white" />
+              </div>
 
-            <!-- Category -->
-            <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">{{ modalConfig.label }}</label>
-              <select v-model="form.selectedCategory"
-                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all text-gray-700 dark:text-white">
-                <option value="" disabled>Select a category</option>
-                <option v-for="cat in modalConfig.categories" :key="cat" :value="cat">{{ cat }}</option>
-                <option disabled>──────────</option>
-                <option value="NEW">+ Add New Category</option>
-              </select>
+              <!-- Category -->
+              <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">{{ modalConfig.label }}</label>
+                <select v-model="form.selectedCategory"
+                  class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all text-gray-700 dark:text-white">
+                  <option value="" disabled>Select a category</option>
+                  <option v-for="cat in modalConfig.categories" :key="cat" :value="cat">{{ cat }}</option>
+                  <option disabled>──────────</option>
+                  <option value="NEW">+ Add New Category</option>
+                </select>
+                <input v-if="form.selectedCategory === 'NEW'" v-model="form.customCategory" type="text"
+                  placeholder="Enter new category name..."
+                  class="mt-2 w-full p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none transition-all" />
+              </div>
 
-              <input v-if="form.selectedCategory === 'NEW'" v-model="form.customCategory" type="text"
-                placeholder="Enter new category name..."
-                class="mt-2 w-full p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none transition-all" />
-            </div>
+              <!-- Remarks -->
+              <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Remarks / Details</label>
+                <textarea v-model="form.remarks" rows="2" placeholder="e.g. March electricity bill, TNB account #12345"
+                  class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all resize-none text-gray-700 dark:text-white"></textarea>
+              </div>
 
-            <!-- Remarks -->
-            <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Remarks / Details</label>
-              <textarea v-model="form.remarks" rows="2" placeholder="e.g. March electricity bill, TNB account #12345"
-                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all resize-none text-gray-700 dark:text-white"></textarea>
-            </div>
+              <!-- Amount -->
+              <div>
+                <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Amount (RM)</label>
+                <div class="relative">
+                  <span class="absolute left-4 top-3.5 text-gray-400 dark:text-gray-500 font-bold">RM</span>
+                  <input v-model="form.amount" type="number" min="0" step="0.01" placeholder="0.00"
+                    class="w-full pl-12 p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all font-mono text-lg text-gray-700 dark:text-white" />
+                </div>
+              </div>
 
-            <!-- Amount -->
-            <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Amount (RM)</label>
-              <div class="relative">
-                <span class="absolute left-4 top-3.5 text-gray-400 dark:text-gray-500 font-bold">RM</span>
-                <input v-model="form.amount" type="number" min="0" step="0.01" placeholder="0.00"
-                  class="w-full pl-12 p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 outline-none transition-all font-mono text-lg text-gray-700 dark:text-white" />
+              <!-- Actions -->
+              <div class="pt-2 flex gap-3">
+                <button @click="closeModal"
+                  class="flex-1 py-3 px-4 rounded-lg text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  Cancel
+                </button>
+                <button @click="saveRecord" :disabled="isSubmitting"
+                  :class="modalConfig.themeColor"
+                  class="flex-1 py-3 px-4 rounded-lg text-white font-bold shadow-md disabled:opacity-60 transition-all">
+                  {{ isSubmitting ? 'Saving...' : 'Save Record' }}
+                </button>
               </div>
             </div>
 
-            <!-- Receipt upload (UI only — no storage yet) -->
-            <div>
-              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Upload Receipt <span class="text-gray-300 dark:text-gray-600 normal-case font-normal">(optional)</span></label>
-              <div class="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-4 flex flex-col items-center justify-center text-center hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-300 dark:hover:border-gray-500 transition-colors cursor-pointer group"
-                @click="fileInput.click()">
-                <input ref="fileInput" type="file" class="hidden" @change="handleFileUpload" accept="image/*,application/pdf" />
-
-                <div v-if="!form.receiptPreview" class="flex flex-col items-center">
-                  <svg class="w-8 h-8 text-gray-300 dark:text-gray-500 group-hover:text-gray-400 mb-2 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            <!-- Receipt upload — right -->
+            <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
+              <button type="button" @click="receiptInput.click()"
+                class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer relative group overflow-hidden">
+                <img v-if="form.receiptPreview" :src="form.receiptPreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
+                <template v-if="!form.receiptPreview">
+                  <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-gray-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span class="text-xs text-gray-500 dark:text-gray-400 font-medium">Click to upload image or PDF</span>
+                  <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-gray-500 font-medium text-center px-3 leading-relaxed">Click to upload receipt</span>
+                </template>
+                <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
+                  <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
                 </div>
-
-                <div v-else class="flex items-center gap-3 w-full">
-                  <div class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-                    <img :src="form.receiptPreview" class="w-full h-full object-cover" />
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-xs font-bold text-gray-700 dark:text-gray-300 truncate">{{ form.receipt?.name }}</p>
-                    <p class="text-[10px] text-gray-400">Preview only — storage coming soon</p>
-                  </div>
-                  <button @click.stop="form.receipt = null; form.receiptPreview = null" class="text-gray-400 hover:text-red-500 dark:hover:text-red-400">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+              </button>
+              <div v-if="form.receiptPreview" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
+                <button type="button" @click="form.receipt = null; form.receiptPreview = null"
+                  class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove</button>
               </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="pt-2 flex gap-3">
-              <button @click="closeModal"
-                class="flex-1 py-3 px-4 rounded-lg text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                Cancel
-              </button>
-              <button @click="saveRecord" :disabled="isSubmitting"
-                :class="modalConfig.themeColor"
-                class="flex-1 py-3 px-4 rounded-lg text-white font-bold shadow-md disabled:opacity-60 transition-all">
-                {{ isSubmitting ? 'Saving...' : 'Save Record' }}
-              </button>
+              <input ref="receiptInput" type="file" class="hidden" accept="image/*" @change="handleReceiptUpload" />
             </div>
           </div>
 
