@@ -51,18 +51,37 @@ const handleProfileClick = (profile) => {
   isPinModalOpen.value = true
 }
 
-const verifyPin = () => {
+const verifyPin = async () => {
   if (enteredPin.value === selectedProfile.value.pin) {
-    // Correct PIN: load into store and go to dashboard
+    const db = getFirestore(firebaseApp)
+    const bizId = getAuth(firebaseApp).currentUser.uid
+
+    let onboardingCompleted = true
+    let businessTypes = []
+
+    if (selectedProfile.value.role === 'Owner') {
+      try {
+        const bizSnap = await getDoc(doc(db, 'businesses', bizId))
+        if (bizSnap.exists()) {
+          onboardingCompleted = bizSnap.data().onboardingCompleted ?? true
+          businessTypes = bizSnap.data().businessTypes || []
+        }
+      } catch (err) {
+        console.error('Failed to fetch business flags:', err)
+      }
+    }
+
     authStore.setUser({
-      ...selectedProfile.value,           // includes avatarUrl, full_name, role, pin, etc.
-      businessId: getAuth(firebaseApp).currentUser.uid,
+      ...selectedProfile.value,
+      businessId: bizId,
       profileId: selectedProfile.value.id,
       email: getAuth(firebaseApp).currentUser.email,
+      onboardingCompleted,
+      businessTypes,
     })
-    
+
     isPinModalOpen.value = false
-    router.push('/') // Redirect to Dashboard
+    router.push(onboardingCompleted ? '/' : '/onboarding')
   } else {
     pinError.value = "Incorrect PIN. Try again."
     enteredPin.value = ''

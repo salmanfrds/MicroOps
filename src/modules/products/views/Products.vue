@@ -2,11 +2,28 @@
 import { ref, computed } from 'vue'
 import { useProductsStore } from '../stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
+import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 
 const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
+const authStore = useAuthStore()
 const toastStore = useToastStore()
+
+const BUSINESS_TYPE_TO_PRODUCT_TYPES = {
+    retail:  ['Stocked'],
+    food:    ['Prepared'],
+    service: ['Service'],
+    rental:  ['Rental'],
+}
+
+const productTypes = computed(() => {
+    const bizTypes = authStore.user?.businessTypes || []
+    if (!bizTypes.length) return ['Stocked', 'Prepared', 'Service', 'Rental']
+    const allowed = new Set()
+    bizTypes.forEach(bt => BUSINESS_TYPE_TO_PRODUCT_TYPES[bt]?.forEach(t => allowed.add(t)))
+    return ['Stocked', 'Prepared', 'Service', 'Rental'].filter(t => allowed.has(t))
+})
 
 const isViewAllModalOpen = ref(false)
 
@@ -93,10 +110,9 @@ const editImagePreview = ref('')
 const addImageInput = ref(null)
 const editImageInput = ref(null)
 
-const productTypes = ['Stocked', 'Prepared', 'Service', 'Rental']
 const productCategories = ['Drinks', 'Food', 'Merch', 'General']
 
-const emptyForm = () => ({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
+const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
 
 const openAddModal = () => {
     addForm.value = emptyForm()

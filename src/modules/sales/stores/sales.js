@@ -31,9 +31,8 @@ export const useSalesStore = defineStore('sales', () => {
 
         const processedItems = items.map(item => {
             if (item.isRental) {
-                const durationMs = item.rateUnit === 'day'
-                    ? item.duration * 86400000
-                    : item.duration * 3600000
+                const msPerUnit = { hour: 3600000, day: 86400000, month: 30 * 86400000 }
+                const durationMs = item.duration * (msPerUnit[item.rateUnit] || 3600000)
                 return {
                     ...item,
                     rentalStartAt: Timestamp.fromMillis(nowMs),

@@ -80,6 +80,7 @@ const filteredCart = computed(() =>
 
 const cartQty = ref({})
 const cartDuration = ref({})
+const cartDurationUnit = ref({})
 const now = ref(Date.now())
 const completingOrders = ref(new Set())
 
@@ -112,22 +113,42 @@ const toggleRental = (productId) => {
   const current = cartQty.value[productId] || 0
   cartQty.value[productId] = current > 0 ? 0 : 1
   if (!cartDuration.value[productId]) cartDuration.value[productId] = 1
+  if (!cartDurationUnit.value[productId]) {
+    const product = productsStore.items.find(p => p.id === productId)
+    cartDurationUnit.value[productId] = product?.rateUnit || 'hour'
+  }
+}
+
+const getEffectiveRate = (product, selectedUnit) => {
+  const base = product.rateUnit || 'hour'
+  const rate = product.price || 0
+  if (base === selectedUnit) return rate
+  if (base === 'hour') {
+    if (selectedUnit === 'day') return rate * 24
+    if (selectedUnit === 'month') return rate * 24 * 30
+  }
+  if (base === 'day') {
+    if (selectedUnit === 'month') return rate * 30
+  }
+  return rate
 }
 
 const cartItems = computed(() =>
   cart.value.filter(p => (cartQty.value[p.id] || 0) > 0).map(p => {
     if (p.type === 'Rental') {
       const duration = cartDuration.value[p.id] || 1
+      const billingUnit = cartDurationUnit.value[p.id] || p.rateUnit || 'hour'
+      const effectiveRate = getEffectiveRate(p, billingUnit)
       return {
         productId: p.id,
         inventoryId: p.inventoryId || null,
         name: p.name,
         sku: p.sku,
         qty: 1,
-        price: p.price,
-        rateUnit: p.rateUnit || 'hour',
+        price: effectiveRate,
+        rateUnit: billingUnit,
         duration,
-        subtotal: p.price * duration,
+        subtotal: effectiveRate * duration,
         isRental: true
       }
     }
@@ -235,6 +256,7 @@ const openNewOrderModal = () => {
   selectedPaymentMethod.value = 'Cash'
   cartQty.value = {}
   cartDuration.value = {}
+  cartDurationUnit.value = {}
   isModalOpen.value = true
 }
 
@@ -494,10 +516,22 @@ const receiptData = computed(() => {
                             class="w-full py-1 rounded-lg text-[11px] font-bold transition-colors">
                             {{ (cartQty[product.id] || 0) > 0 ? '✓ Reserved' : 'Reserve' }}
                           </button>
-                          <div v-if="(cartQty[product.id] || 0) > 0" class="flex items-center gap-1 mt-1">
-                            <input v-model.number="cartDuration[product.id]" type="number" min="1" :max="product.maxDuration || 999"
-                              class="w-full text-center p-1 border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-xs font-bold" />
-                            <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ product.rateUnit }}s</span>
+                          <div v-if="(cartQty[product.id] || 0) > 0" class="mt-1 space-y-1">
+                            <div class="flex gap-0.5">
+                              <button v-for="unit in ['hour', 'day', 'month']" :key="unit"
+                                @click="cartDurationUnit[product.id] = unit"
+                                :class="(cartDurationUnit[product.id] || product.rateUnit) === unit
+                                  ? 'bg-[#004D40] text-white'
+                                  : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-500'"
+                                class="flex-1 py-0.5 text-[9px] font-bold rounded capitalize transition-colors">
+                                {{ unit === 'hour' ? 'Hr' : unit === 'day' ? 'Day' : 'Mo' }}
+                              </button>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <input v-model.number="cartDuration[product.id]" type="number" min="1" :max="product.maxDuration || 999"
+                                class="w-full text-center p-1 border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-xs font-bold" />
+                              <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ (cartDurationUnit[product.id] || product.rateUnit) }}(s)</span>
+                            </div>
                           </div>
                         </template>
                       </div>

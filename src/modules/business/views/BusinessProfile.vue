@@ -14,6 +14,14 @@ const business = ref({
   bankName: '', accountNumber: '', duitnowId: '',
   logoUrl: '', duitnowQrUrl: ''
 })
+
+const BUSINESS_TYPES = [
+  { id: 'retail',  label: 'Retail / Shop',      desc: 'Sell physical products from stock',                    productTypes: ['Stocked']  },
+  { id: 'food',    label: 'Food & Beverage',     desc: 'Prepare and sell meals, drinks or baked goods',        productTypes: ['Prepared'] },
+  { id: 'service', label: 'Service Provider',    desc: 'Offer professional services (cleaning, repair, etc.)', productTypes: ['Service']  },
+  { id: 'rental',  label: 'Rental Business',     desc: 'Rent out items, equipment or assets',                  productTypes: ['Rental']   },
+]
+const businessTypes = ref([])
 const savedName = ref('') // only updates after a successful save
 
 
@@ -56,7 +64,8 @@ const loadProfile = async () => {
       }
       logoPreview.value = data.logoUrl || ''
       qrPreview.value = data.duitnowQrUrl || ''
-      savedName.value = data.name || ''   // snapshot the persisted name
+      savedName.value = data.name || ''
+      businessTypes.value = data.businessTypes || []
     }
   } catch (err) {
     console.error('Error loading business profile:', err)
@@ -80,8 +89,10 @@ const saveProfile = async () => {
       accountNumber: business.value.accountNumber,
       duitnowId: business.value.duitnowId,
       logoUrl: business.value.logoUrl,
-      duitnowQrUrl: business.value.duitnowQrUrl
+      duitnowQrUrl: business.value.duitnowQrUrl,
+      businessTypes: businessTypes.value
     }, { merge: true })
+    authStore.setUser({ ...authStore.user, businessTypes: businessTypes.value })
     success = true
   } catch (err) {
     console.error('Error saving profile:', err)
@@ -391,6 +402,45 @@ onMounted(async () => {
         <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-4 leading-relaxed px-2">
           This QR will be displayed on digital invoices for customers to scan and pay.
         </p>
+      </div>
+    </div>
+
+    <!-- Business Types -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 p-6 transition-colors mb-8">
+      <div class="mb-5">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Business Type</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Controls which product types are available when creating products.</p>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <button v-for="bt in BUSINESS_TYPES" :key="bt.id"
+          type="button"
+          @click="businessTypes.includes(bt.id) ? businessTypes.splice(businessTypes.indexOf(bt.id), 1) : businessTypes.push(bt.id)"
+          :class="businessTypes.includes(bt.id)
+            ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
+            : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300 dark:hover:border-teal-700'"
+          class="flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all">
+
+          <div class="flex items-center gap-2 w-full">
+            <div :class="businessTypes.includes(bt.id)
+                ? 'bg-[#004D40] dark:bg-teal-500 border-[#004D40] dark:border-teal-500'
+                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+              class="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors">
+              <svg v-if="businessTypes.includes(bt.id)" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p class="font-bold text-gray-800 dark:text-white text-sm">{{ bt.label }}</p>
+          </div>
+
+          <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{{ bt.desc }}</p>
+
+          <div class="flex flex-wrap gap-1">
+            <span v-for="pt in bt.productTypes" :key="pt"
+              class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-300 tracking-wider">
+              {{ pt }}
+            </span>
+          </div>
+        </button>
       </div>
     </div>
 

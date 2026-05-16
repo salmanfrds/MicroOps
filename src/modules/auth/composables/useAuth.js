@@ -92,7 +92,9 @@ export function useAuth() {
         const bizRef = doc(db, 'businesses', userCredential.user.uid)
         await setDoc(bizRef, {
           owner_email: email,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          onboardingCompleted: false,
+          businessTypes: []
         })
 
         // The sub-collection 'profiles' represents the Netflix-style users (Owner, Staff)

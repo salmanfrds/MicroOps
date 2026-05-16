@@ -16,6 +16,7 @@ import FeatureLocked from '../../shared/views/FeatureLocked.vue'
 import AccessDenied from '../../shared/views/AccessDenied.vue'
 import Signup from '../../modules/auth/views/Signup.vue'
 import SelectProfile from '../../modules/auth/views/SelectProfile.vue'
+import Onboarding from '../../shared/views/Onboarding.vue'
 
 const routes = [
     {
@@ -96,6 +97,12 @@ const routes = [
         component: Signup,
         meta: { requireAuth: false }
     },
+    {
+        path: '/onboarding',
+        name: 'Onboarding',
+        component: Onboarding,
+        meta: { requireAuth: true, hideNavigation: true }
+    },
 ]
 
 export const router = createRouter({
@@ -135,15 +142,19 @@ router.beforeEach(async (to, from, next) => {
     else if (requiresAuth && sessionUser && !authStore.user && to.path !== '/select-profile') {
         next('/select-profile')
     }
-    // 4. Logged in, HAS active profile, trying to access a protected route that requires specific roles
+    // 4. Owner hasn't completed onboarding yet
+    else if (requiresAuth && sessionUser && authStore.user && authStore.user.role === 'Owner' && authStore.user.onboardingCompleted === false && to.path !== '/onboarding') {
+        next('/onboarding')
+    }
+    // 5. Logged in, HAS active profile, trying to access a protected route that requires specific roles
     else if (requiresAuth && sessionUser && authStore.user && requiredRoles) {
         if (!requiredRoles.includes(authStore.user.role)) {
-            next('/access-denied') // Redirect if user's role is not in the requiredRoles array
+            next('/access-denied')
         } else {
             next()
         }
     }
-    // 5. Default pass through
+    // 6. Default pass through
     else {
         next()
     }
