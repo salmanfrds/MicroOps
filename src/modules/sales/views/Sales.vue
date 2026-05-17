@@ -6,6 +6,7 @@ import { useInventoryStore } from '../../inventory/stores/inventory'
 import { useCustomersStore } from '../../customer/stores/customers'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
+import { useCurrency } from '../../../shared/composables/useCurrency'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../../../shared/lib/firebaseClient'
 
@@ -15,14 +16,21 @@ const inventoryStore = useInventoryStore()
 const customersStore = useCustomersStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
+const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
 
 const duitnowQrUrl = ref('')
 
 onMounted(async () => {
   const bizId = authStore.user?.businessId
   if (!bizId) return
-  const snap = await getDoc(doc(db, 'businesses', bizId))
-  if (snap.exists()) duitnowQrUrl.value = snap.data().duitnowQrUrl || ''
+  const [bizSnap, prodSnap] = await Promise.all([
+    getDoc(doc(db, 'businesses', bizId)),
+    getDoc(doc(db, 'businesses', bizId, 'settings', 'products')),
+  ])
+  if (bizSnap.exists()) duitnowQrUrl.value = bizSnap.data().duitnowQrUrl || ''
+  if (prodSnap.exists() && Array.isArray(prodSnap.data().categories)) {
+    productCategoriesSales.value = prodSnap.data().categories
+  }
 })
 
 // --- UI STATE ---
@@ -35,6 +43,8 @@ const selectedCustomerId = ref('')
 const isSubmitting = ref(false)
 const isViewAllModalOpen = ref(false)
 const activeTypeTab = ref('All')
+const activeCategoryTab = ref('')
+const productCategoriesSales = ref([])
 
 const sortedOrders = computed(() => {
   return [...salesStore.orders].sort((a, b) => {
@@ -74,9 +84,18 @@ const cart = computed(() =>
 )
 
 const productTypes = ['All', 'Stocked', 'Prepared', 'Service', 'Rental']
-const filteredCart = computed(() =>
-  activeTypeTab.value === 'All' ? cart.value : cart.value.filter(p => p.type === activeTypeTab.value)
-)
+
+const activeSalesCategoryFilters = computed(() => {
+  const used = new Set(productsStore.items.map(p => p.category).filter(Boolean))
+  return productCategoriesSales.value.filter(c => used.has(c))
+})
+
+const filteredCart = computed(() => {
+  let list = cart.value
+  if (activeTypeTab.value !== 'All') list = list.filter(p => p.type === activeTypeTab.value)
+  if (activeCategoryTab.value) list = list.filter(p => p.category === activeCategoryTab.value)
+  return list
+})
 
 const cartQty = ref({})
 const cartDuration = ref({})
@@ -257,6 +276,8 @@ const openNewOrderModal = () => {
   cartQty.value = {}
   cartDuration.value = {}
   cartDurationUnit.value = {}
+  activeTypeTab.value = 'All'
+  activeCategoryTab.value = ''
   isModalOpen.value = true
 }
 
@@ -287,7 +308,7 @@ const shareReceipt = async () => {
     try {
       await navigator.share({
         title: 'Receipt from MicroOps',
-        text: `Order ${receiptData.value.id} - Total RM ${receiptData.value.total.toFixed(2)}`,
+        text: `Order ${receiptData.value.id} - Total ${fmtMoney(receiptData.value.total)}`,
       })
     } catch (err) {
       console.log('Error sharing:', err)
@@ -411,7 +432,7 @@ const receiptData = computed(() => {
               </div>
             </td>
             <td class="p-4 text-right">
-              <div class="font-bold text-gray-800 dark:text-gray-200">RM {{ (order.total || 0).toFixed(2) }}</div>
+              <div class="font-bold text-gray-800 dark:text-gray-200">{{ fmtMoney(order.total) }}</div>
             </td>
             <td class="p-4 text-center">
               <button @click="viewReceipt(order)"
@@ -452,7 +473,7 @@ const receiptData = computed(() => {
             <!-- LEFT: product catalog -->
             <div class="flex flex-col flex-1 min-w-0 overflow-hidden border-r border-gray-100 dark:border-gray-700">
 
-              <!-- Customer row + type tabs -->
+              <!-- Customer row + type tabs + category chips -->
               <div class="px-4 pt-3 pb-2 shrink-0 space-y-2 border-b border-gray-100 dark:border-gray-700">
                 <select v-model="selectedCustomerId"
                   class="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#4DB6AC]">
@@ -467,6 +488,20 @@ const receiptData = computed(() => {
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-teal-900/20'"
                     class="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors">
                     {{ tab }}
+                  </button>
+                </div>
+                <div v-if="activeSalesCategoryFilters.length > 0" class="flex gap-1.5 overflow-x-auto pb-0.5">
+                  <button
+                    @click="activeCategoryTab = ''"
+                    :class="activeCategoryTab === '' ? 'bg-teal-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-teal-50 dark:hover:bg-teal-900/20'"
+                    class="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors">
+                    All Categories
+                  </button>
+                  <button v-for="cat in activeSalesCategoryFilters" :key="cat"
+                    @click="activeCategoryTab = activeCategoryTab === cat ? '' : cat"
+                    :class="activeCategoryTab === cat ? 'bg-teal-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-teal-50 dark:hover:bg-teal-900/20'"
+                    class="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors">
+                    {{ cat }}
                   </button>
                 </div>
               </div>
@@ -504,7 +539,7 @@ const receiptData = computed(() => {
                     <div class="p-2">
                       <div class="font-bold text-gray-800 dark:text-gray-100 text-xs truncate">{{ product.name }}</div>
                       <div class="text-[#004D40] dark:text-teal-400 font-bold text-sm mt-0.5">
-                        RM {{ (product.price || 0).toFixed(2) }}<span v-if="product.type === 'Rental'" class="text-[10px] font-normal text-gray-400">/{{ product.rateUnit }}</span>
+                        {{ fmtMoney(product.price) }}<span v-if="product.type === 'Rental'" class="text-[10px] font-normal text-gray-400">/{{ product.rateUnit }}</span>
                       </div>
 
                       <!-- Rental controls -->
@@ -573,7 +608,7 @@ const receiptData = computed(() => {
                       <span v-else>x{{ item.qty }}</span>
                     </div>
                   </div>
-                  <div class="text-xs font-bold text-[#004D40] dark:text-teal-400 shrink-0">RM {{ item.subtotal.toFixed(2) }}</div>
+                  <div class="text-xs font-bold text-[#004D40] dark:text-teal-400 shrink-0">{{ fmtMoney(item.subtotal) }}</div>
                 </div>
               </div>
 
@@ -591,10 +626,10 @@ const receiptData = computed(() => {
 
                 <div class="space-y-1 text-sm">
                   <div class="flex justify-between text-gray-500 dark:text-gray-400">
-                    <span>Subtotal</span><span>RM {{ cartTotal.toFixed(2) }}</span>
+                    <span>Subtotal</span><span>{{ fmtMoney(cartTotal) }}</span>
                   </div>
                   <div class="flex justify-between font-bold text-gray-800 dark:text-white text-base border-t border-gray-100 dark:border-gray-700 pt-1">
-                    <span>Total</span><span>RM {{ cartTotal.toFixed(2) }}</span>
+                    <span>Total</span><span>{{ fmtMoney(cartTotal) }}</span>
                   </div>
                 </div>
 
@@ -609,7 +644,7 @@ const receiptData = computed(() => {
           <!-- Step 2: Payment Waiting State (DuitNow / Card) -->
           <div v-if="currentStep === 2" class="p-12 flex flex-col items-center justify-center h-full bg-gray-50 dark:bg-gray-900/50 overflow-y-auto">
             <h4 class="text-2xl font-black text-gray-800 dark:text-white tracking-tight mb-2">Awaiting Payment</h4>
-            <p class="text-gray-500 dark:text-gray-400 mb-8 font-medium">Total Due: <span class="text-gray-900 dark:text-white font-bold text-xl">RM {{ cartTotal.toFixed(2) }}</span></p>
+            <p class="text-gray-500 dark:text-gray-400 mb-8 font-medium">Total Due: <span class="text-gray-900 dark:text-white font-bold text-xl">{{ fmtMoney(cartTotal) }}</span></p>
             
             <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center max-w-sm w-full">
               <!-- DuitNow State -->
@@ -656,13 +691,13 @@ const receiptData = computed(() => {
               <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
                 <div v-for="(item, idx) in receiptData.items" :key="idx" class="flex justify-between">
                   <span>{{ item.name }} (x{{ item.qty }})</span>
-                  <span>RM {{ ((item.price || 0) * (item.qty || 0)).toFixed(2) }}</span>
+                  <span>{{ fmtMoney((item.price || 0) * (item.qty || 0)) }}</span>
                 </div>
                 <div v-if="!receiptData.items?.length" class="text-center italic text-gray-400">No items</div>
               </div>
               <div class="flex justify-between font-bold text-lg text-gray-800 dark:text-white">
                 <span>Total</span>
-                <span>RM {{ (receiptData.total || 0).toFixed(2) }}</span>
+                <span>{{ fmtMoney(receiptData.total) }}</span>
               </div>
             </div>
             
@@ -744,7 +779,7 @@ const receiptData = computed(() => {
                       {{ countItems(order.items) }} item(s)
                     </td>
                     <td class="p-4">
-                      <div class="font-bold text-gray-800 dark:text-gray-200">RM {{ (order.total || 0).toFixed(2) }}</div>
+                      <div class="font-bold text-gray-800 dark:text-gray-200">{{ fmtMoney(order.total) }}</div>
                     </td>
                     <td class="p-4">
                       <div class="flex flex-col gap-1 items-start">

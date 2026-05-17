@@ -1,14 +1,18 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { useProductsStore } from '../stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
+import { useCurrency } from '../../../shared/composables/useCurrency'
+import { db } from '../../../shared/lib/firebaseClient'
 
 const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
+const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
 
 const BUSINESS_TYPE_TO_PRODUCT_TYPES = {
     retail:  ['Stocked'],
@@ -38,15 +42,23 @@ const sortedProducts = computed(() => {
 
 const searchQuery = ref('')
 const typeFilter = ref('')
+const categoryFilter = ref('')
 
 const tableProducts = computed(() => sortedProducts.value.slice(0, 15))
+
+const activeCategoryFilters = computed(() => {
+  const used = new Set(productsStore.items.map(p => p.category).filter(Boolean))
+  return productCategories.value.filter(c => used.has(c))
+})
 
 const filteredProducts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const t = typeFilter.value
+  const c = categoryFilter.value
   let list = sortedProducts.value
   if (q) list = list.filter(p => (p.name || '').toLowerCase().includes(q))
   if (t) list = list.filter(p => p.type === t)
+  if (c) list = list.filter(p => p.category === c)
   return list
 })
 
@@ -110,7 +122,53 @@ const editImagePreview = ref('')
 const addImageInput = ref(null)
 const editImageInput = ref(null)
 
-const productCategories = ['Drinks', 'Food', 'Merch', 'General']
+const DEFAULT_CATEGORIES = ['General', 'Drinks', 'Food', 'Merch']
+const productCategories = ref([...DEFAULT_CATEGORIES])
+const showAddCategoryInput = ref(false)
+const showAddCategoryInputEdit = ref(false)
+const newCategoryLabel = ref('')
+
+const getCatDocRef = () => {
+  const bizId = authStore.user?.businessId
+  return bizId ? doc(db, 'businesses', bizId, 'settings', 'products') : null
+}
+
+const loadCategories = async () => {
+  const ref = getCatDocRef()
+  if (!ref) return
+  const snap = await getDoc(ref)
+  if (snap.exists() && Array.isArray(snap.data().categories)) {
+    productCategories.value = snap.data().categories
+  }
+}
+
+const saveCategories = async () => {
+  const ref = getCatDocRef()
+  if (!ref) return
+  await setDoc(ref, { categories: productCategories.value }, { merge: true })
+}
+
+const addCategory = async (formRef) => {
+  const label = newCategoryLabel.value.trim()
+  if (!label || productCategories.value.includes(label)) return
+  productCategories.value.push(label)
+  if (formRef) formRef.category = label
+  newCategoryLabel.value = ''
+  showAddCategoryInput.value = false
+  showAddCategoryInputEdit.value = false
+  await saveCategories()
+}
+
+const deleteCategory = async (idx, formRef) => {
+  const removed = productCategories.value[idx]
+  productCategories.value.splice(idx, 1)
+  if (formRef && formRef.category === removed) {
+    formRef.category = productCategories.value[0] || ''
+  }
+  await saveCategories()
+}
+
+onMounted(loadCategories)
 
 const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
 
@@ -262,7 +320,7 @@ const handleDelete = async () => {
             <tr class="border-b border-gray-100 dark:border-gray-700">
               <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Product Info</th>
               <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Type</th>
-              <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Price (RM)</th>
+              <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Price ({{ currencySymbol }})</th>
               <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Available Stock</th>
               <th class="p-4 text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
@@ -300,7 +358,7 @@ const handleDelete = async () => {
               </td>
               
               <td class="p-4">
-                 <div class="font-bold text-gray-800 dark:text-white text-base">RM {{ parseFloat(product.price).toFixed(2) }}</div>
+                 <div class="font-bold text-gray-800 dark:text-white text-base">{{ fmtMoney(product.price) }}</div>
               </td>
               
               <td class="p-4">
@@ -365,6 +423,38 @@ const handleDelete = async () => {
                     </div>
 
                     <div>
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <div v-for="(cat, idx) in productCategories" :key="cat" class="relative group/cat">
+                                <button type="button"
+                                    @click="addForm.category = cat"
+                                    :class="addForm.category === cat ? 'bg-indigo-500 text-white pr-6' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-600 pr-6'"
+                                    class="pl-3 py-1.5 rounded-lg text-xs font-bold transition-all">{{ cat }}</button>
+                                <button type="button"
+                                    @click.stop="deleteCategory(idx, addForm)"
+                                    class="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center opacity-0 group-hover/cat:opacity-100 transition-opacity text-xs"
+                                    :class="addForm.category === cat ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-red-500'"
+                                >&times;</button>
+                            </div>
+                            <template v-if="!showAddCategoryInput">
+                                <button type="button" @click="showAddCategoryInput = true"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-bold border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors">+ Add</button>
+                            </template>
+                            <template v-else>
+                                <div class="flex items-center gap-1">
+                                    <input v-model="newCategoryLabel" type="text" placeholder="Category name"
+                                        class="w-28 px-2 py-1 text-xs border border-indigo-400 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-400 outline-none"
+                                        @keyup.enter="addCategory(addForm)" @keyup.escape="showAddCategoryInput = false; newCategoryLabel = ''" autofocus />
+                                    <button type="button" @click="addCategory(addForm)" :disabled="!newCategoryLabel.trim()"
+                                        class="px-2 py-1 bg-indigo-500 text-white rounded-lg text-xs font-bold disabled:opacity-40">✓</button>
+                                    <button type="button" @click="showAddCategoryInput = false; newCategoryLabel = ''"
+                                        class="px-2 py-1 text-gray-400 hover:text-red-500 text-xs font-bold">&times;</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
                         <input v-model="addForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
                     </div>
@@ -375,7 +465,7 @@ const handleDelete = async () => {
                             <input v-model="addForm.sku" type="text" placeholder="COF-001" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none uppercase text-gray-700 dark:text-white transition-shadow">
                         </div>
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ addForm.type === 'Rental' ? 'Rate (RM)' : 'Price (RM)' }}</label>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ addForm.type === 'Rental' ? `Rate (${currencySymbol})` : `Price (${currencySymbol})` }}</label>
                             <input v-model="addForm.price" type="number" placeholder="0.00" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
@@ -394,20 +484,12 @@ const handleDelete = async () => {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Category</label>
-                            <select v-model="addForm.category" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                                <option v-for="cat in productCategories" :key="cat" :value="cat">{{ cat }}</option>
-                            </select>
-                        </div>
-                        <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'">
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
-                            <select v-model="addForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                                <option value="" disabled>-- Select Inventory --</option>
-                                <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
-                            </select>
-                        </div>
+                    <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'">
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
+                        <select v-model="addForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
+                            <option value="" disabled>-- Select Inventory --</option>
+                            <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
+                        </select>
                     </div>
 
                     <div class="pt-2 flex gap-3">
@@ -468,6 +550,38 @@ const handleDelete = async () => {
                     </div>
 
                     <div>
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <div v-for="(cat, idx) in productCategories" :key="cat" class="relative group/cat">
+                                <button type="button"
+                                    @click="editForm.category = cat"
+                                    :class="editForm.category === cat ? 'bg-indigo-500 text-white pr-6' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-600 pr-6'"
+                                    class="pl-3 py-1.5 rounded-lg text-xs font-bold transition-all">{{ cat }}</button>
+                                <button type="button"
+                                    @click.stop="deleteCategory(idx, editForm)"
+                                    class="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center opacity-0 group-hover/cat:opacity-100 transition-opacity text-xs"
+                                    :class="editForm.category === cat ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-red-500'"
+                                >&times;</button>
+                            </div>
+                            <template v-if="!showAddCategoryInputEdit">
+                                <button type="button" @click="showAddCategoryInputEdit = true"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-bold border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-indigo-400 hover:text-indigo-500 transition-colors">+ Add</button>
+                            </template>
+                            <template v-else>
+                                <div class="flex items-center gap-1">
+                                    <input v-model="newCategoryLabel" type="text" placeholder="Category name"
+                                        class="w-28 px-2 py-1 text-xs border border-indigo-400 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-indigo-400 outline-none"
+                                        @keyup.enter="addCategory(editForm)" @keyup.escape="showAddCategoryInputEdit = false; newCategoryLabel = ''" autofocus />
+                                    <button type="button" @click="addCategory(editForm)" :disabled="!newCategoryLabel.trim()"
+                                        class="px-2 py-1 bg-indigo-500 text-white rounded-lg text-xs font-bold disabled:opacity-40">✓</button>
+                                    <button type="button" @click="showAddCategoryInputEdit = false; newCategoryLabel = ''"
+                                        class="px-2 py-1 text-gray-400 hover:text-red-500 text-xs font-bold">&times;</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
                         <input v-model="editForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                     </div>
@@ -478,7 +592,7 @@ const handleDelete = async () => {
                             <input v-model="editForm.sku" type="text" placeholder="COF-001" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none uppercase text-gray-700 dark:text-white transition-shadow">
                         </div>
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ editForm.type === 'Rental' ? 'Rate (RM)' : 'Price (RM)' }}</label>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ editForm.type === 'Rental' ? `Rate (${currencySymbol})` : `Price (${currencySymbol})` }}</label>
                             <input v-model="editForm.price" type="number" placeholder="0.00" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
@@ -497,20 +611,12 @@ const handleDelete = async () => {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Category</label>
-                            <select v-model="editForm.category" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                                <option v-for="cat in productCategories" :key="cat" :value="cat">{{ cat }}</option>
-                            </select>
-                        </div>
-                        <div v-if="editForm.type === 'Stocked' || editForm.type === 'Rental'">
-                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
-                            <select v-model="editForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                                <option value="" disabled>-- Select Inventory --</option>
-                                <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
-                            </select>
-                        </div>
+                    <div v-if="editForm.type === 'Stocked' || editForm.type === 'Rental'">
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
+                        <select v-model="editForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
+                            <option value="" disabled>-- Select Inventory --</option>
+                            <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
+                        </select>
                     </div>
 
                     <div class="pt-2 flex gap-3">
@@ -558,7 +664,8 @@ const handleDelete = async () => {
             </div>
             <button @click="isViewAllModalOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
           </div>
-          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 space-y-2">
+            <!-- Search + Type row -->
             <div class="flex gap-2">
               <div class="relative flex-1">
                 <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -572,6 +679,16 @@ const handleDelete = async () => {
                 <option value="Rental">Rental</option>
               </select>
             </div>
+            <!-- Category filter chips -->
+            <div v-if="activeCategoryFilters.length > 0" class="flex flex-wrap gap-1.5">
+              <button @click="categoryFilter = ''"
+                :class="categoryFilter === '' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-colors">All Categories</button>
+              <button v-for="cat in activeCategoryFilters" :key="cat"
+                @click="categoryFilter = categoryFilter === cat ? '' : cat"
+                :class="categoryFilter === cat ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-colors">{{ cat }}</button>
+            </div>
           </div>
           
           <div class="flex-1 overflow-auto p-6">
@@ -581,7 +698,7 @@ const handleDelete = async () => {
                   <tr class="border-b border-gray-100 dark:border-gray-700">
                     <th class="p-4 text-xs font-bold uppercase tracking-wider">Product Info</th>
                     <th class="p-4 text-xs font-bold uppercase tracking-wider">Type</th>
-                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Price (RM)</th>
+                    <th class="p-4 text-xs font-bold uppercase tracking-wider">Price ({{ currencySymbol }})</th>
                     <th class="p-4 text-xs font-bold uppercase tracking-wider">Available Stock</th>
                   </tr>
                 </thead>

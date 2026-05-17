@@ -1,13 +1,16 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { useInventoryStore } from '../stores/inventory'
 import { useProductsStore } from '../../products/stores/products'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
-import { storage } from '../../../shared/lib/firebaseClient'
+import { db, storage } from '../../../shared/lib/firebaseClient'
+import { useCurrency } from '../../../shared/composables/useCurrency'
 
 const inventoryStore = useInventoryStore()
+const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
 const productsStore = useProductsStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
@@ -44,14 +47,22 @@ const sortedItems = computed(() => {
 
 const searchQuery = ref('')
 const statusFilter = ref('')
+const typeFilter = ref('')
 
 const tableItems = computed(() => sortedItems.value.slice(0, 15))
+
+const activeTypeFilters = computed(() => {
+  const usedValues = new Set(inventoryStore.items.map(i => i.type).filter(Boolean))
+  return itemTypes.value.filter(t => usedValues.has(t.value))
+})
 
 const filteredInventoryItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const s = statusFilter.value
+  const t = typeFilter.value
   let list = inventoryItems.value
   if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
+  if (t) list = list.filter(i => i.type === t)
   if (s) list = list.filter(i => {
     if (s === 'Low Stock') return i.stock > 0 && i.stock < 10
     if (s === 'Out of Stock') return i.stock === 0
@@ -130,8 +141,8 @@ const isAddModalOpen = ref(false)
 const isEditModalOpen = ref(false)
 
 // Forms
-const addForm = ref({ name: '', sku: '', stock: '', cost: '', type: 'RAW_MATERIAL', productId: '' })
-const editForm = ref({ id: '', name: '', sku: '', cost: '', type: 'RAW_MATERIAL', productId: '' })
+const addForm = ref({ name: '', sku: '', stock: '', cost: '', assetValue: '', type: 'RAW_MATERIAL', productId: '' })
+const editForm = ref({ id: '', name: '', sku: '', cost: '', assetValue: '', type: 'RAW_MATERIAL', productId: '' })
 const stockForm = ref({ type: 'IN', amount: '', unitCost: '', remark: '' })
 
 // Live cost calculations
@@ -146,27 +157,68 @@ const stockTotalCost = computed(() => {
   const cost = Number(stockForm.value.unitCost) || 0
   return qty * cost
 })
-const itemTypes = [
-  { value: 'RAW_MATERIAL',    label: 'Raw Material',    desc: 'Ingredients or inputs used in production' },
-  { value: 'FINISHED_GOODS',  label: 'Finished Goods',  desc: 'Completed products ready for sale' },
-  { value: 'CONSUMABLE',      label: 'Consumable',      desc: 'Supplies used in daily operations' },
-  { value: 'EQUIPMENT',       label: 'Equipment',       desc: 'Tools, machines or tracked assets' },
-  { value: 'PACKAGING',       label: 'Packaging',       desc: 'Boxes, bags or labels for shipping' },
+const DEFAULT_ITEM_TYPES = [
+  { value: 'RAW_MATERIAL',   label: 'Raw Material',   desc: 'Ingredients or inputs used in production' },
+  { value: 'FINISHED_GOODS', label: 'Finished Goods', desc: 'Completed products ready for sale' },
+  { value: 'CONSUMABLE',     label: 'Consumable',     desc: 'Supplies used in daily operations' },
+  { value: 'EQUIPMENT',      label: 'Equipment',      desc: 'Tools, machines or tracked assets' },
+  { value: 'PACKAGING',      label: 'Packaging',      desc: 'Boxes, bags or labels for shipping' },
 ]
 
-const logInitialTransaction = ref(true)
+const itemTypes = ref([...DEFAULT_ITEM_TYPES])
+const showAddTypeInput = ref(false)
+const newTypeLabel = ref('')
+const newTypeDesc = ref('')
+
+const getTypesDocRef = () => {
+  const bizId = authStore.user?.businessId
+  return bizId ? doc(db, 'businesses', bizId, 'settings', 'inventory') : null
+}
+
+const loadItemTypes = async () => {
+  const ref = getTypesDocRef()
+  if (!ref) return
+  const snap = await getDoc(ref)
+  if (snap.exists() && Array.isArray(snap.data().itemTypes)) {
+    itemTypes.value = snap.data().itemTypes
+  }
+}
+
+const saveItemTypes = async () => {
+  const ref = getTypesDocRef()
+  if (!ref) return
+  await setDoc(ref, { itemTypes: itemTypes.value }, { merge: true })
+}
+
+const addCustomType = async () => {
+  const label = newTypeLabel.value.trim()
+  if (!label) return
+  const value = label.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
+  if (itemTypes.value.some(t => t.value === value)) return
+  itemTypes.value.push({ value, label, desc: newTypeDesc.value.trim() })
+  newTypeLabel.value = ''
+  newTypeDesc.value = ''
+  showAddTypeInput.value = false
+  addForm.value.type = value
+  await saveItemTypes()
+}
+
+const deleteItemType = async (index) => {
+  itemTypes.value.splice(index, 1)
+  await saveItemTypes()
+}
+
+onMounted(loadItemTypes)
 
 // Add Actions
 const openAddModal = () => {
-    logInitialTransaction.value = true
     addReceiptFile.value = null
     addReceiptPreview.value = ''
     isAddModalOpen.value = true
 }
 const closeAddModal = () => {
     isAddModalOpen.value = false
-    addForm.value = { name: '', sku: '', stock: '', cost: '', type: 'CONSUMABLE', productId: '' }
-    logInitialTransaction.value = true
+    addForm.value = { name: '', sku: '', stock: '', cost: '', assetValue: '', type: 'CONSUMABLE', productId: '' }
     addReceiptFile.value = null
     addReceiptPreview.value = ''
 }
@@ -179,7 +231,8 @@ const handleAddProduct = async () => {
         : null
     const tid = toastStore.loading('Adding inventory item...')
     try {
-        const { txRef } = await inventoryStore.addInventoryItem(addForm.value, logInitialTransaction.value, loggedBy)
+        const shouldLog = Number(addForm.value.stock) > 0
+        const { txRef } = await inventoryStore.addInventoryItem(addForm.value, shouldLog, loggedBy)
 
         if (imageFile && txRef?.id) {
             const bizId = authStore.user?.businessId
@@ -227,6 +280,7 @@ const openEditModal = (item) => {
         name: item.name,
         sku: item.sku || '',
         cost: item.cost || '',
+        assetValue: item.assetValue || '',
         type: item.type || 'RAW_MATERIAL',
         productId: item.productId || ''
     }
@@ -249,6 +303,7 @@ const handleUpdateItem = async () => {
         name: editForm.value.name,
         sku: editForm.value.sku || '',
         cost: Number(editForm.value.cost) || 0,
+        assetValue: Number(editForm.value.assetValue) || 0,
         type: editForm.value.type || 'CONSUMABLE',
         productId: editForm.value.productId || null
     }
@@ -321,7 +376,7 @@ const handleDeleteItem = async () => {
         <h2 class="text-3xl font-bold text-gray-800 dark:text-white">Inventory Management</h2>
         <p class="mt-2 text-gray-600 dark:text-gray-400 mb-4">Real-time stock levels and adjustments.</p>
         
-        <button 
+        <button
           @click="openAddModal"
           class="bg-[#004D40] dark:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg shadow hover:bg-[#26A69A] transition-colors flex items-center gap-2"
         >
@@ -375,8 +430,11 @@ const handleDeleteItem = async () => {
                    <span class="font-bold text-gray-800 dark:text-white text-base">{{ item.stock }}</span>
                    <span class="text-xs text-gray-400 dark:text-gray-500">units</span>
                  </div>
+                 <div v-if="item.assetValue" class="mt-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-bold">
+                   ≈ {{ fmtMoney(item.assetValue) }}
+                 </div>
               </td>
-              
+
               <td class="p-4">
                 <span :class="item.statusClass" class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border border-transparent">
                   {{ item.status }}
@@ -452,7 +510,7 @@ const handleDeleteItem = async () => {
                 </div>
               </td>
               <td class="p-4 align-top text-right">
-                <div v-if="log.type === 'IN'" class="font-bold text-gray-800 dark:text-white text-sm font-mono tabular-nums">RM {{ (log.total || 0).toFixed(2) }}</div>
+                <div v-if="log.type === 'IN'" class="font-bold text-gray-800 dark:text-white text-sm font-mono tabular-nums">{{ fmtMoney(log.total) }}</div>
                 <div v-else class="text-gray-400 dark:text-gray-500 text-sm font-mono tabular-nums">-</div>
               </td>
             </tr>
@@ -474,16 +532,49 @@ const handleDeleteItem = async () => {
             <div class="flex-1 p-6 space-y-4">
                 <div>
                      <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Item Type</label>
-                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                         <button 
-                             v-for="t in itemTypes" 
+                     <div class="flex flex-wrap gap-2">
+                         <div
+                             v-for="(t, idx) in itemTypes"
                              :key="t.value"
-                             @click="addForm.type = t.value"
-                             :class="addForm.type === t.value ? 'bg-[#4DB6AC] text-white shadow-md ring-2 ring-[#4DB6AC]/40' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-teal-900/20 border border-gray-200 dark:border-gray-600'"
-                             class="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none text-left"
+                             class="relative group/type"
                          >
-                             {{ t.label }}
-                         </button>
+                             <button
+                                 @click="addForm.type = t.value"
+                                 :class="addForm.type === t.value ? 'bg-[#4DB6AC] text-white shadow-md ring-2 ring-[#4DB6AC]/40 pr-7' : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-teal-900/20 border border-gray-200 dark:border-gray-600 pr-7'"
+                                 class="pl-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none"
+                             >{{ t.label }}</button>
+                             <button
+                                 @click.stop="deleteItemType(idx); if (addForm.type === t.value) addForm.type = itemTypes[0]?.value || ''"
+                                 class="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover/type:opacity-100 transition-opacity"
+                                 :class="addForm.type === t.value ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-red-500'"
+                                 title="Remove type"
+                             >&times;</button>
+                         </div>
+
+                         <!-- Inline add new type -->
+                         <template v-if="!showAddTypeInput">
+                             <button
+                                 @click="showAddTypeInput = true"
+                                 class="px-3 py-2 rounded-lg text-sm font-bold border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-teal-400 dark:hover:border-teal-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
+                             >+ Add</button>
+                         </template>
+                         <template v-else>
+                             <div class="flex items-center gap-1">
+                                 <input
+                                     v-model="newTypeLabel"
+                                     type="text"
+                                     placeholder="Type name"
+                                     class="w-32 px-2 py-1.5 text-sm border border-teal-400 dark:border-teal-500 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-teal-400 outline-none"
+                                     @keyup.enter="addCustomType"
+                                     @keyup.escape="showAddTypeInput = false; newTypeLabel = ''"
+                                     autofocus
+                                 />
+                                 <button @click="addCustomType" :disabled="!newTypeLabel.trim()"
+                                     class="px-2 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold disabled:opacity-40">✓</button>
+                                 <button @click="showAddTypeInput = false; newTypeLabel = ''"
+                                     class="px-2 py-1.5 text-gray-400 hover:text-red-500 rounded-lg text-xs font-bold">&times;</button>
+                             </div>
+                         </template>
                      </div>
                      <p class="mt-2 text-xs text-gray-400 dark:text-gray-500 italic">
                          {{ itemTypes.find(t => t.value === addForm.type)?.desc }}
@@ -500,11 +591,20 @@ const handleDeleteItem = async () => {
                         <input v-model="addForm.sku" type="text" placeholder="VC-001" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none uppercase text-gray-700 dark:text-white">
                     </div>
                     <div>
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Cost / Unit (RM)</label>
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Cost / Unit ({{ currencySymbol }})</label>
                         <input v-model="addForm.cost" type="number" placeholder="0.00" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white">
                     </div>
                 </div>
-                
+
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                        Estimated Value ({{ currencySymbol }})
+                        <span class="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500">optional — for asset tracking only, not logged as procurement</span>
+                    </label>
+                    <input v-model="addForm.assetValue" type="number" placeholder="e.g. 1000.00"
+                        class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white">
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Initial Stock Quantity</label>
@@ -519,26 +619,17 @@ const handleDeleteItem = async () => {
                     </div>
                 </div>
 
-                <!-- Total Initial Value -->
-                <div v-if="addTotalCost > 0" class="flex items-center justify-between bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg px-4 py-3">
-                    <span class="text-sm font-medium text-teal-700 dark:text-teal-300">Total Initial Stock Value</span>
-                    <span class="text-base font-bold text-teal-800 dark:text-teal-300 font-mono">RM {{ addTotalCost.toFixed(2) }}</span>
-                </div>
-
-                <!-- Log transaction toggle — only shown when stock > 0 -->
-                <div v-if="Number(addForm.stock) > 0"
-                    @click="logInitialTransaction = !logInitialTransaction"
-                    :class="logInitialTransaction ? 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800' : 'bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-600'"
-                    class="flex items-center justify-between border rounded-lg px-4 py-3 cursor-pointer select-none transition-colors">
+                <!-- Total Initial Value — shown when both stock and cost are entered -->
+                <div v-if="Number(addForm.stock) > 0 && Number(addForm.cost) > 0" class="flex items-center justify-between bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg px-4 py-3">
                     <div>
-                        <p :class="logInitialTransaction ? 'text-teal-800 dark:text-teal-300' : 'text-gray-600 dark:text-gray-400'" class="text-sm font-bold">Log as opening transaction</p>
-                        <p :class="logInitialTransaction ? 'text-teal-600 dark:text-teal-400' : 'text-gray-400 dark:text-gray-500'" class="text-xs mt-0.5">
-                            {{ logInitialTransaction ? 'Initial stock will appear in transaction history' : 'Initial stock will be set silently' }}
-                        </p>
+                        <p class="text-sm font-bold text-teal-800 dark:text-teal-300">Opening procurement will be logged</p>
+                        <p class="text-xs text-teal-600 dark:text-teal-400 mt-0.5">{{ addForm.stock }} units × {{ fmtMoney(addForm.cost) }} = {{ fmtMoney(addTotalCost) }}</p>
                     </div>
-                    <div :class="logInitialTransaction ? 'bg-teal-500' : 'bg-gray-300 dark:bg-gray-600'" class="relative w-10 h-6 rounded-full transition-colors shrink-0 ml-4">
-                        <span :class="logInitialTransaction ? 'translate-x-5' : 'translate-x-1'" class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"></span>
-                    </div>
+                    <span class="text-base font-bold text-teal-800 dark:text-teal-300 font-mono">{{ fmtMoney(addTotalCost) }}</span>
+                </div>
+                <div v-else-if="Number(addForm.stock) > 0" class="flex items-center gap-2 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg px-4 py-3">
+                    <svg class="w-4 h-4 text-teal-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <p class="text-xs text-teal-700 dark:text-teal-400">Opening procurement will be logged. Add a cost per unit to track value.</p>
                 </div>
 
                 <div class="pt-4 flex gap-3">
@@ -547,8 +638,8 @@ const handleDeleteItem = async () => {
                 </div>
             </div>
 
-            <!-- Receipt upload — right -->
-            <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
+            <!-- Receipt upload — right (only shown when initial stock will be logged) -->
+            <div v-if="Number(addForm.stock) > 0" class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
                 <button type="button" @click="addReceiptInput.click()"
                     class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-teal-50 dark:hover:bg-teal-900/10 transition-colors cursor-pointer relative group overflow-hidden">
                     <img v-if="addReceiptPreview" :src="addReceiptPreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
@@ -625,9 +716,17 @@ const handleDeleteItem = async () => {
                                 <input v-model="editForm.sku" type="text" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none uppercase text-gray-700 dark:text-white">
                             </div>
                             <div>
-                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Cost / Unit (RM)</label>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Cost / Unit ({{ currencySymbol }})</label>
                                 <input v-model="editForm.cost" type="number" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-gray-700 dark:text-white">
                             </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                Estimated Value ({{ currencySymbol }})
+                                <span class="ml-1 text-[10px] font-normal text-gray-400 dark:text-gray-500">for asset tracking only</span>
+                            </label>
+                            <input v-model="editForm.assetValue" type="number" placeholder="e.g. 1000.00"
+                                class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-gray-700 dark:text-white">
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Product</label>
@@ -678,15 +777,15 @@ const handleDeleteItem = async () => {
                              <div>
                                  <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Unit Cost (RM)</label>
                                  <div class="relative">
-                                     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-bold text-sm">RM</span>
+                                     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-bold text-sm">{{ currencySymbol }}</span>
                                      <input v-model="stockForm.unitCost" type="number" min="0" step="0.01" placeholder="0.00" class="w-full pl-10 p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none font-mono text-gray-800 dark:text-white">
                                  </div>
                                  <p class="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Leave unchanged to use stored cost</p>
                              </div>
                              <div v-if="stockTotalCost > 0" class="flex flex-col justify-center items-center bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-2.5">
                                  <span class="text-[10px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wide">Total Stock-In Cost</span>
-                                 <span class="text-lg font-black text-blue-700 dark:text-blue-300 font-mono mt-0.5">RM {{ stockTotalCost.toFixed(2) }}</span>
-                                 <span class="text-[10px] text-blue-400 dark:text-blue-500">{{ stockForm.amount || 0 }} units × RM {{ Number(stockForm.unitCost || 0).toFixed(2) }}</span>
+                                 <span class="text-lg font-black text-blue-700 dark:text-blue-300 font-mono mt-0.5">{{ fmtMoney(stockTotalCost) }}</span>
+                                 <span class="text-[10px] text-blue-400 dark:text-blue-500">{{ stockForm.amount || 0 }} units × {{ fmtMoney(stockForm.unitCost || 0) }}</span>
                              </div>
                          </div>
 
@@ -752,7 +851,8 @@ const handleDeleteItem = async () => {
             </div>
             <button @click="isViewAllModalOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
           </div>
-          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+          <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 space-y-2">
+            <!-- Search + Status row -->
             <div class="flex gap-2">
               <div class="relative flex-1">
                 <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -766,6 +866,20 @@ const handleDeleteItem = async () => {
                 <option value="Available">Available (Rental)</option>
                 <option value="Rented">Rented</option>
               </select>
+            </div>
+            <!-- Type filter chips (only shown when there are types in use) -->
+            <div v-if="activeTypeFilters.length > 0" class="flex flex-wrap gap-1.5">
+              <button
+                @click="typeFilter = ''"
+                :class="typeFilter === '' ? 'bg-[#004D40] dark:bg-teal-700 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-colors"
+              >All Types</button>
+              <button
+                v-for="t in activeTypeFilters" :key="t.value"
+                @click="typeFilter = typeFilter === t.value ? '' : t.value"
+                :class="typeFilter === t.value ? 'bg-[#004D40] dark:bg-teal-700 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-colors"
+              >{{ t.label }}</button>
             </div>
           </div>
           

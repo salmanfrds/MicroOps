@@ -13,6 +13,12 @@ const step = ref(1)
 const TOTAL_STEPS = 2
 
 const businessInfo = reactive({ name: '', address: '', phone: '', website: '' })
+const selectedCurrency = ref('RM')
+
+const CURRENCIES = [
+  { id: 'RM',  label: 'RM — Malaysian Ringgit',   symbol: 'RM',  example: 'RM 10.00' },
+  { id: 'IDR', label: 'Rp — Indonesian Rupiah',    symbol: 'Rp',  example: 'Rp 150.000' },
+]
 
 const BUSINESS_TYPES = [
   {
@@ -70,9 +76,15 @@ const completeOnboarding = async () => {
       phone: businessInfo.phone || '',
       website: businessInfo.website || '',
       businessTypes: selectedTypes.value,
+      currency: selectedCurrency.value,
       onboardingCompleted: true,
     }, { merge: true })
-    authStore.setUser({ ...authStore.user, onboardingCompleted: true, businessTypes: selectedTypes.value })
+    authStore.setUser({
+      ...authStore.user,
+      onboardingCompleted: true,
+      businessTypes: selectedTypes.value,
+      currency: selectedCurrency.value,
+    })
     router.push('/')
   } catch (err) {
     console.error('Onboarding save failed:', err)
@@ -128,6 +140,31 @@ const completeOnboarding = async () => {
               <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Website</label>
               <input v-model="businessInfo.website" type="url" placeholder="www.yourbiz.com"
                 class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none text-gray-800 dark:text-white" />
+            </div>
+          </div>
+
+          <!-- Currency selection -->
+          <div>
+            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Currency</label>
+            <div class="grid grid-cols-2 gap-3">
+              <button v-for="c in CURRENCIES" :key="c.id"
+                type="button"
+                @click="selectedCurrency = c.id"
+                :class="selectedCurrency === c.id
+                  ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
+                  : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300 dark:hover:border-teal-700'"
+                class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
+                <div :class="selectedCurrency === c.id
+                    ? 'bg-[#004D40] dark:bg-teal-500 border-[#004D40] dark:border-teal-500'
+                    : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+                  class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
+                  <div v-if="selectedCurrency === c.id" class="w-2 h-2 rounded-full bg-white"></div>
+                </div>
+                <div>
+                  <p class="font-bold text-gray-800 dark:text-white text-sm">{{ c.label }}</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">e.g. {{ c.example }}</p>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -195,7 +232,7 @@ const completeOnboarding = async () => {
     </div>
 
     <p class="mt-6 text-xs text-gray-400 dark:text-gray-600 text-center">
-      You can update business info and types anytime in Business Settings.
+      You can update business info and currency anytime in Business Settings.
     </p>
   </div>
 </template>

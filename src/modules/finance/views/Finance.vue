@@ -5,6 +5,7 @@ import { useFinanceStore } from '../stores/finance'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 import { storage } from '../../../shared/lib/firebaseClient'
+import { useCurrency } from '../../../shared/composables/useCurrency'
 
 const financeStore = useFinanceStore()
 const authStore = useAuthStore()
@@ -148,7 +149,7 @@ const modalConfig = computed(() => {
   }
 })
 
-const formatMoney = (val) => 'RM ' + (val || 0).toFixed(2)
+const { fmt: formatMoney } = useCurrency()
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '—'

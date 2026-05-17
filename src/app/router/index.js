@@ -71,7 +71,7 @@ const routes = [
         path: '/business',
         name: 'Business',
         component: BusinessProfile,
-        meta: { requireAuth: true, roles: ['Owner'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Manager'] }
     },
     {
         path: '/login',

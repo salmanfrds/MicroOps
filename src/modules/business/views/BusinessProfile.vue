@@ -22,7 +22,13 @@ const BUSINESS_TYPES = [
   { id: 'rental',  label: 'Rental Business',     desc: 'Rent out items, equipment or assets',                  productTypes: ['Rental']   },
 ]
 const businessTypes = ref([])
-const savedName = ref('') // only updates after a successful save
+const currency = ref('RM')
+const savedName = ref('')
+
+const CURRENCIES = [
+  { id: 'RM',  label: 'RM — Malaysian Ringgit', example: 'RM 10.00' },
+  { id: 'IDR', label: 'Rp — Indonesian Rupiah',  example: 'Rp 150.000' },
+]
 
 
 
@@ -66,6 +72,7 @@ const loadProfile = async () => {
       qrPreview.value = data.duitnowQrUrl || ''
       savedName.value = data.name || ''
       businessTypes.value = data.businessTypes || []
+      currency.value = data.currency || 'RM'
     }
   } catch (err) {
     console.error('Error loading business profile:', err)
@@ -90,9 +97,10 @@ const saveProfile = async () => {
       duitnowId: business.value.duitnowId,
       logoUrl: business.value.logoUrl,
       duitnowQrUrl: business.value.duitnowQrUrl,
-      businessTypes: businessTypes.value
+      businessTypes: businessTypes.value,
+      currency: currency.value
     }, { merge: true })
-    authStore.setUser({ ...authStore.user, businessTypes: businessTypes.value })
+    authStore.setUser({ ...authStore.user, businessTypes: businessTypes.value, currency: currency.value })
     success = true
   } catch (err) {
     console.error('Error saving profile:', err)
@@ -439,6 +447,34 @@ onMounted(async () => {
               class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-300 tracking-wider">
               {{ pt }}
             </span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Currency -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors mb-8">
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Currency</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Used for all prices, totals, and reports across the app.</p>
+      </div>
+      <div class="p-6 grid grid-cols-2 gap-3">
+        <button v-for="c in CURRENCIES" :key="c.id"
+          type="button"
+          @click="currency = c.id"
+          :class="currency === c.id
+            ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
+            : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300 dark:hover:border-teal-700'"
+          class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
+          <div :class="currency === c.id
+              ? 'bg-[#004D40] dark:bg-teal-500 border-[#004D40] dark:border-teal-500'
+              : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+            class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
+            <div v-if="currency === c.id" class="w-2 h-2 rounded-full bg-white"></div>
+          </div>
+          <div>
+            <p class="font-bold text-gray-800 dark:text-white text-sm">{{ c.label }}</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">e.g. {{ c.example }}</p>
           </div>
         </button>
       </div>

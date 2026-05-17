@@ -94,7 +94,8 @@ export function useAuth() {
           owner_email: email,
           created_at: new Date().toISOString(),
           onboardingCompleted: false,
-          businessTypes: []
+          businessTypes: [],
+          currency: 'RM'
         })
 
         // The sub-collection 'profiles' represents the Netflix-style users (Owner, Staff)
@@ -106,9 +107,20 @@ export function useAuth() {
           created_at: new Date().toISOString()
         })
 
-        // We do NOT fetch the profile into the store yet, 
-        // because the user must select their profile in the next screen.
-        router.push('/select-profile')
+        // Populate the store immediately — no profile selection needed after fresh signup
+        authStore.setUser({
+          id: 'owner',
+          full_name: fullName,
+          role: 'Owner',
+          pin: pinStr,
+          businessId: userCredential.user.uid,
+          profileId: 'owner',
+          email,
+          onboardingCompleted: false,
+          businessTypes: [],
+          currency: 'RM',
+        })
+        router.push('/onboarding')
       }
       return true
     } catch (err) {

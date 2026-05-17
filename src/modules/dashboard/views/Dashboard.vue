@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import Chart from 'chart.js/auto'
 import { useDashboardAnalytics } from '../composables/useDashboardAnalytics'
+import { useCurrency } from '../../../shared/composables/useCurrency'
 
 const {
   totalRevenue, netProfit, totalOrders, lowStockCount, outOfStockCount,
@@ -19,6 +20,8 @@ const stockCanvas    = ref(null)
 
 let revExpChart = null, trendChart = null, productChart = null,
     statusChart = null, stockChart  = null, observer = null
+
+const { symbol: currencySymbol, fmt: fmtCurrency } = useCurrency()
 
 const fmt = (n) => {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
@@ -57,13 +60,13 @@ const initCharts = () => {
         labels: d.labels,
         datasets: [
           {
-            label: 'Revenue (RM)',
+            label: `Revenue (${currencySymbol.value})`,
             data: d.revenue,
             backgroundColor: 'rgba(5,150,105,0.85)',
             borderRadius: 5,
           },
           {
-            label: 'Expenses (RM)',
+            label: `Expenses (${currencySymbol.value})`,
             data: d.expenses,
             backgroundColor: 'rgba(239,68,68,0.75)',
             borderRadius: 5,
@@ -248,7 +251,7 @@ onUnmounted(() => {
       <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 flex flex-col gap-3">
         <span class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">Total Revenue</span>
         <div>
-          <p class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">RM {{ fmt(totalRevenue) }}</p>
+          <p class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{{ currencySymbol }} {{ fmt(totalRevenue) }}</p>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">From all paid orders</p>
         </div>
       </div>
@@ -259,7 +262,7 @@ onUnmounted(() => {
         <div>
           <p class="text-3xl font-bold tracking-tight"
             :class="netProfit >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-500 dark:text-red-400'">
-            {{ netProfit >= 0 ? '' : '-' }}RM {{ fmt(Math.abs(netProfit)) }}
+            {{ netProfit >= 0 ? '' : '-' }}{{ currencySymbol }} {{ fmt(Math.abs(netProfit)) }}
           </p>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Income minus expenses</p>
         </div>

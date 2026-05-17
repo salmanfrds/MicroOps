@@ -37,6 +37,11 @@ onMounted(async () => {
       id: doc.id,
       ...doc.data()
     }))
+
+    // Single profile — skip the grid and go straight to the PIN prompt
+    if (profiles.value.length === 1) {
+      handleProfileClick(profiles.value[0])
+    }
   } catch (err) {
     console.error("Error fetching profiles:", err)
   } finally {
@@ -58,6 +63,7 @@ const verifyPin = async () => {
 
     let onboardingCompleted = true
     let businessTypes = []
+    let currency = 'RM'
 
     if (selectedProfile.value.role === 'Owner') {
       try {
@@ -65,6 +71,7 @@ const verifyPin = async () => {
         if (bizSnap.exists()) {
           onboardingCompleted = bizSnap.data().onboardingCompleted ?? true
           businessTypes = bizSnap.data().businessTypes || []
+          currency = bizSnap.data().currency || 'RM'
         }
       } catch (err) {
         console.error('Failed to fetch business flags:', err)
@@ -78,6 +85,7 @@ const verifyPin = async () => {
       email: getAuth(firebaseApp).currentUser.email,
       onboardingCompleted,
       businessTypes,
+      currency,
     })
 
     isPinModalOpen.value = false
