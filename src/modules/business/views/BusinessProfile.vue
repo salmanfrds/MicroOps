@@ -5,9 +5,11 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { db, storage } from '../../../shared/lib/firebaseClient'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
+import { useCurrencyStore, CURRENCY_CONFIG } from '../../../shared/stores/currency'
 
 const authStore = useAuthStore()
 const toastStore = useToastStore()
+const currencyStore = useCurrencyStore()
 
 const business = ref({
   name: '', address: '', phone: '', website: '',
@@ -26,7 +28,7 @@ const currency = ref('RM')
 const savedName = ref('')
 
 const CURRENCIES = [
-  { id: 'RM',  label: 'RM — Malaysian Ringgit', example: 'RM 10.00' },
+  { id: 'MYR', label: 'RM — Malaysian Ringgit', example: 'RM 10.00' },
   { id: 'IDR', label: 'Rp — Indonesian Rupiah',  example: 'Rp 150.000' },
 ]
 
@@ -454,29 +456,91 @@ onMounted(async () => {
 
     <!-- Currency -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors mb-8">
-      <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Currency</h3>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Used for all prices, totals, and reports across the app.</p>
+      <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-4">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Currency</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">All prices and transactions are stored in your base currency.</p>
+        </div>
+        <!-- Base currency badge -->
+        <div class="shrink-0 flex flex-col items-end gap-1">
+          <span class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Base Currency</span>
+          <span class="px-3 py-1 rounded-full text-sm font-black bg-[#004D40] dark:bg-teal-700 text-white tracking-wide">
+            {{ CURRENCY_CONFIG[currency]?.code || currency }}
+          </span>
+          <span class="text-xs text-gray-400 dark:text-gray-500">{{ CURRENCY_CONFIG[currency]?.name }}</span>
+        </div>
       </div>
-      <div class="p-6 grid grid-cols-2 gap-3">
-        <button v-for="c in CURRENCIES" :key="c.id"
-          type="button"
-          @click="currency = c.id"
-          :class="currency === c.id
-            ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
-            : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300 dark:hover:border-teal-700'"
-          class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
-          <div :class="currency === c.id
-              ? 'bg-[#004D40] dark:bg-teal-500 border-[#004D40] dark:border-teal-500'
-              : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
-            class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
-            <div v-if="currency === c.id" class="w-2 h-2 rounded-full bg-white"></div>
-          </div>
+
+      <!-- Base currency picker -->
+      <div class="px-6 pt-5 pb-2">
+        <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Change Base Currency</p>
+        <div class="grid grid-cols-2 gap-3">
+          <button v-for="c in CURRENCIES" :key="c.id"
+            type="button"
+            @click="currency = c.id"
+            :class="currency === c.id
+              ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
+              : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300 dark:hover:border-teal-700'"
+            class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
+            <div :class="currency === c.id
+                ? 'bg-[#004D40] dark:bg-teal-500 border-[#004D40] dark:border-teal-500'
+                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+              class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
+              <div v-if="currency === c.id" class="w-2 h-2 rounded-full bg-white"></div>
+            </div>
+            <div>
+              <p class="font-bold text-gray-800 dark:text-white text-sm">{{ c.label }}</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">e.g. {{ c.example }}</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Display currency switcher -->
+      <div class="px-6 pt-4 pb-6 border-t border-gray-100 dark:border-gray-700 mt-4">
+        <div class="flex items-start justify-between gap-4 mb-3">
           <div>
-            <p class="font-bold text-gray-800 dark:text-white text-sm">{{ c.label }}</p>
-            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">e.g. {{ c.example }}</p>
+            <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Display Currency</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">View amounts converted to another currency. Stored values are not changed.</p>
           </div>
-        </button>
+          <span v-if="currencyStore.isConverting"
+            class="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 tracking-wide">
+            CONVERTED VIEW
+          </span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <button
+            @click="currencyStore.requestSwitch(currency)"
+            :class="!currencyStore.isConverting
+              ? 'border-[#004D40] dark:border-teal-400 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-[#004D40]/20 dark:ring-teal-400/20'
+              : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-teal-300'"
+            class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
+            <div :class="!currencyStore.isConverting ? 'bg-[#004D40] border-[#004D40]' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+              class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0">
+              <div v-if="!currencyStore.isConverting" class="w-2 h-2 rounded-full bg-white"></div>
+            </div>
+            <div>
+              <p class="font-bold text-gray-800 dark:text-white text-sm">{{ CURRENCY_CONFIG[currency]?.name }}</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Base (no conversion)</p>
+            </div>
+          </button>
+          <button v-for="c in CURRENCIES.filter(c => c.id !== currency)" :key="c.id"
+            @click="currencyStore.requestSwitch(c.id)"
+            :class="currencyStore.isConverting && currencyStore.effectiveCurrency === c.id
+              ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-400/20'
+              : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 hover:border-amber-300'"
+            class="flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all">
+            <div :class="currencyStore.isConverting && currencyStore.effectiveCurrency === c.id
+                ? 'bg-amber-400 border-amber-400' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500'"
+              class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0">
+              <div v-if="currencyStore.isConverting && currencyStore.effectiveCurrency === c.id" class="w-2 h-2 rounded-full bg-white"></div>
+            </div>
+            <div>
+              <p class="font-bold text-gray-800 dark:text-white text-sm">{{ c.label }}</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">~1 {{ CURRENCY_CONFIG[currency]?.symbol }} = {{ currency === 'MYR' ? '3,600' : '0.00028' }} {{ CURRENCY_CONFIG[c.id]?.symbol }}</p>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
 

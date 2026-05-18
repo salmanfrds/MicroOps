@@ -13,11 +13,11 @@ const step = ref(1)
 const TOTAL_STEPS = 2
 
 const businessInfo = reactive({ name: '', address: '', phone: '', website: '' })
-const selectedCurrency = ref('RM')
+const selectedCurrency = ref('MYR')
 
 const CURRENCIES = [
-  { id: 'RM',  label: 'RM — Malaysian Ringgit',   symbol: 'RM',  example: 'RM 10.00' },
-  { id: 'IDR', label: 'Rp — Indonesian Rupiah',    symbol: 'Rp',  example: 'Rp 150.000' },
+  { id: 'MYR', label: 'RM — Malaysian Ringgit', symbol: 'RM', example: 'RM 10.00' },
+  { id: 'IDR', label: 'Rp — Indonesian Rupiah',  symbol: 'Rp', example: 'Rp 150.000' },
 ]
 
 const BUSINESS_TYPES = [
