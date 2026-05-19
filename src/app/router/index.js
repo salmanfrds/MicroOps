@@ -9,6 +9,7 @@ import Finance from '../../modules/finance/views/Finance.vue'
 import Inventory from '../../modules/inventory/views/Inventory.vue'
 import Products from '../../modules/products/views/Products.vue'
 import Customer from '../../modules/customer/views/Customer.vue'
+import Discounts from '../../modules/customer/views/Discounts.vue'
 import Profile from '../../modules/auth/views/Profile.vue'
 import Login from '../../modules/auth/views/Login.vue'
 import BusinessProfile from '../../modules/business/views/BusinessProfile.vue'
@@ -60,6 +61,12 @@ const routes = [
         name: 'Customer',
         component: Customer,
         meta: { requireAuth: true, roles: ['Owner', 'Cashier'] }
+    },
+    {
+        path: '/discounts',
+        name: 'Discounts',
+        component: Discounts,
+        meta: { requireAuth: true, roles: ['Owner', 'Manager', 'Cashier'] }
     },
     {
         path: '/profile',

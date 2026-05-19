@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useFinanceStore } from '../stores/finance'
 import { useAuthStore } from '../../auth/stores/auth'
@@ -41,10 +41,10 @@ const expenseCategories = ['Bills & Utilities', 'Rent / Mortgage', 'Salaries', '
 
 // --- EXPENSE GROUPS ---
 const EXPENSE_GROUPS = {
-  'Cost of Goods': { categories: ['Procurement'], color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500' },
-  'Overhead':      { categories: ['Rent / Mortgage', 'Salaries', 'Insurance'], color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400', dot: 'bg-red-500' },
-  'Operations':    { categories: ['Bills & Utilities', 'Marketing', 'Maintenance', 'Transport'], color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', dot: 'bg-amber-500' },
-  'Other':         { categories: [], color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400', dot: 'bg-gray-400' },
+  'Cost of Goods': { categories: ['Procurement'], color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500', text: 'text-orange-500 dark:text-orange-400' },
+  'Overhead':      { categories: ['Rent / Mortgage', 'Salaries', 'Insurance'], color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400', dot: 'bg-red-500', text: 'text-red-500 dark:text-red-400' },
+  'Operations':    { categories: ['Bills & Utilities', 'Marketing', 'Maintenance', 'Transport'], color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', dot: 'bg-amber-500', text: 'text-amber-500 dark:text-amber-400' },
+  'Other':         { categories: [], color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400', dot: 'bg-gray-400', text: 'text-gray-500 dark:text-gray-400' },
 }
 
 const getExpenseGroup = (category) => {
@@ -68,6 +68,34 @@ const tableExpenses = computed(() => {
     ? financeStore.allExpenses.filter(e => getExpenseGroup(e.category) === expenseGroupFilter.value)
     : financeStore.allExpenses
   return list.slice(0, 15)
+})
+
+// --- VIEW ALL FILTERS ---
+const viewAllSearch = ref('')
+const viewAllCategoryFilter = ref('')
+
+watch(viewAllType, () => {
+  viewAllSearch.value = ''
+  viewAllCategoryFilter.value = ''
+})
+
+const viewAllIncomeCategories = computed(() =>
+  [...new Set(financeStore.allIncome.map(e => e.category).filter(Boolean))].sort()
+)
+const viewAllExpenseCategories = computed(() =>
+  [...new Set(financeStore.allExpenses.map(e => e.category).filter(Boolean))].sort()
+)
+
+const filteredViewAllItems = computed(() => {
+  const list = viewAllType.value === 'income' ? financeStore.allIncome : financeStore.allExpenses
+  const q = viewAllSearch.value.toLowerCase()
+  return list.filter(item => {
+    const matchCat = !viewAllCategoryFilter.value || item.category === viewAllCategoryFilter.value
+    const matchSearch = !q ||
+      item.category?.toLowerCase().includes(q) ||
+      item.remarks?.toLowerCase().includes(q)
+    return matchCat && matchSearch
+  })
 })
 
 // --- PDF EXPORT ---
@@ -371,17 +399,17 @@ const originLabel = (origin) => {
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <button v-for="g in expenseBreakdown" :key="g.group"
           @click="expenseGroupFilter = expenseGroupFilter === g.group ? '' : g.group"
-          :class="[g.color, expenseGroupFilter === g.group ? 'ring-2 ring-offset-2 ring-offset-[#F8F7F4] dark:ring-offset-gray-900 ring-current opacity-100' : 'opacity-80 hover:opacity-100']"
-          class="flex items-center justify-between p-4 rounded-xl border border-transparent transition-all text-left">
-          <div>
-            <div class="flex items-center gap-1.5 mb-1">
-              <span :class="g.dot" class="w-2 h-2 rounded-full"></span>
-              <span class="text-xs font-bold uppercase tracking-wide">{{ g.group }}</span>
-            </div>
-            <p class="text-lg font-black">{{ formatMoney(g.total) }}</p>
-            <p class="text-[10px] opacity-70 mt-0.5">{{ g.count }} entr{{ g.count === 1 ? 'y' : 'ies' }}</p>
+          :class="expenseGroupFilter === g.group ? 'bg-gray-50 dark:bg-gray-700/70 shadow-md' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 shadow-sm'"
+          class="relative flex items-center justify-between p-4 rounded-xl border border-gray-100 dark:border-gray-700 transition-all text-left overflow-hidden">
+          <div :class="g.dot" class="absolute left-0 inset-y-0 w-1 rounded-l-xl"></div>
+          <div class="ml-2">
+            <span :class="g.text" class="text-[10px] font-bold uppercase tracking-widest">{{ g.group }}</span>
+            <p :class="g.text" class="text-xl font-black mt-1">{{ formatMoney(g.total) }}</p>
+            <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{{ g.count }} entr{{ g.count === 1 ? 'y' : 'ies' }}</p>
           </div>
-          <svg v-if="expenseGroupFilter === g.group" class="w-4 h-4 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+          <svg v-if="expenseGroupFilter === g.group" :class="g.text" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
         </button>
       </div>
     </div>
@@ -395,7 +423,7 @@ const originLabel = (origin) => {
             <div class="w-2 h-2 rounded-full bg-emerald-500"></div> Income
           </h3>
           <div class="flex items-center gap-4">
-            <span @click="viewAllType = 'income'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Income</span>
+            <span @click="viewAllType = 'income'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All</span>
             <button @click="openModal('income')"
               class="text-sm font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors">
               + Add New
@@ -740,7 +768,8 @@ const originLabel = (origin) => {
       <div v-if="viewAllType" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div @click="viewAllType = null" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
         <div class="relative bg-gray-50 dark:bg-gray-900 w-full max-w-4xl h-[90vh] rounded-xl shadow-2xl flex flex-col animate-fade-in-up overflow-hidden border border-gray-200 dark:border-gray-700">
-          <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-between items-center shrink-0">
             <div class="flex items-center gap-3">
               <div :class="viewAllType === 'income' ? 'bg-emerald-500' : 'bg-red-500'" class="w-2.5 h-2.5 rounded-full"></div>
               <div>
@@ -748,11 +777,32 @@ const originLabel = (origin) => {
                   {{ viewAllType === 'income' ? 'All Income' : 'All Expenses' }}
                 </h3>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  {{ viewAllType === 'income' ? financeStore.allIncome.length : financeStore.allExpenses.length }} records
+                  {{ filteredViewAllItems.length }} of {{ viewAllType === 'income' ? financeStore.allIncome.length : financeStore.allExpenses.length }} records
                 </p>
               </div>
             </div>
             <button @click="viewAllType = null" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-3xl font-bold leading-none">&times;</button>
+          </div>
+
+          <!-- Search + category filters -->
+          <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2.5 shrink-0">
+            <div class="relative">
+              <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z" />
+              </svg>
+              <input v-model="viewAllSearch" type="text"
+                :placeholder="`Search by category or remarks…`"
+                class="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-400 transition-all" />
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button @click="viewAllCategoryFilter = ''"
+                :class="!viewAllCategoryFilter ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">All</button>
+              <button v-for="cat in (viewAllType === 'income' ? viewAllIncomeCategories : viewAllExpenseCategories)" :key="cat"
+                @click="viewAllCategoryFilter = viewAllCategoryFilter === cat ? '' : cat"
+                :class="viewAllCategoryFilter === cat ? 'bg-teal-600 dark:bg-teal-700 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                class="px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">{{ cat }}</button>
+            </div>
           </div>
 
           <div class="flex-1 overflow-auto p-6">
@@ -766,44 +816,29 @@ const originLabel = (origin) => {
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700 align-top">
-                  <!-- INCOME -->
-                  <template v-if="viewAllType === 'income'">
-                    <tr v-if="financeStore.allIncome.length === 0">
-                      <td colspan="3" class="p-8 text-center text-gray-400 dark:text-gray-500">No income records yet.</td>
-                    </tr>
-                    <tr v-for="item in financeStore.allIncome" :key="item.id" @click="openDetail(item)" class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                      <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
-                      <td class="p-4">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
-                          <span v-if="originLabel(item.origin)" class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
-                            {{ originLabel(item.origin) }}
-                          </span>
-                        </div>
-                        <div v-if="item.remarks" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-words">{{ item.remarks }}</div>
-                      </td>
-                      <td class="p-4 text-right text-emerald-600 dark:text-emerald-400 font-bold whitespace-nowrap">+{{ formatMoney(item.amount) }}</td>
-                    </tr>
-                  </template>
-                  <!-- EXPENSES -->
-                  <template v-if="viewAllType === 'expense'">
-                    <tr v-if="financeStore.allExpenses.length === 0">
-                      <td colspan="3" class="p-8 text-center text-gray-400 dark:text-gray-500">No expense records yet.</td>
-                    </tr>
-                    <tr v-for="item in financeStore.allExpenses" :key="item.id" @click="openDetail(item)" class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                      <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
-                      <td class="p-4">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
-                          <span v-if="originLabel(item.origin)" class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
-                            {{ originLabel(item.origin) }}
-                          </span>
-                        </div>
-                        <div v-if="item.remarks" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-words">{{ item.remarks }}</div>
-                      </td>
-                      <td class="p-4 text-right text-red-500 dark:text-red-400 font-bold whitespace-nowrap">-{{ formatMoney(item.amount) }}</td>
-                    </tr>
-                  </template>
+                  <tr v-if="filteredViewAllItems.length === 0">
+                    <td colspan="3" class="p-8 text-center text-gray-400 dark:text-gray-500">No records match your filter.</td>
+                  </tr>
+                  <tr v-for="item in filteredViewAllItems" :key="item.id" @click="openDetail(item)" class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                    <td class="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ formatDate(item.date) }}</td>
+                    <td class="p-4">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
+                        <span v-if="originLabel(item.origin)" class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 tracking-wide">
+                          {{ originLabel(item.origin) }}
+                        </span>
+                        <span v-if="item.type === 'expense'" :class="EXPENSE_GROUPS[getExpenseGroup(item.category)]?.color"
+                          class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded tracking-wide">
+                          {{ getExpenseGroup(item.category) }}
+                        </span>
+                      </div>
+                      <div v-if="item.remarks" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 wrap-break-word">{{ item.remarks }}</div>
+                    </td>
+                    <td :class="item.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'"
+                      class="p-4 text-right font-bold whitespace-nowrap">
+                      {{ item.type === 'income' ? '+' : '-' }}{{ formatMoney(item.amount) }}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>

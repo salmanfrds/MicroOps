@@ -22,9 +22,11 @@ export const useSalesStore = defineStore('sales', () => {
         return bizId
     }
 
-    const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes }) => {
+    const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes, discount }) => {
         const bizId = getBizId()
-        const total = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
+        const subtotal = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
+        const discountAmount = discount?.amount || 0
+        const total = Math.max(0, subtotal - discountAmount)
         const orderNumber = `#${Date.now().toString().slice(-5)}`
         const hasRentals = items.some(i => i.isRental)
         const hasServices = items.some(i => i.isService)
@@ -52,6 +54,12 @@ export const useSalesStore = defineStore('sales', () => {
             customerName: customerName || 'Walk-in Customer',
             customerId: customerId || null,
             items: processedItems,
+            subtotal,
+            discountId: discount?.id || null,
+            discountName: discount?.name || null,
+            discountType: discount?.type || null,
+            discountValue: discount?.value || null,
+            discountAmount: discountAmount || null,
             total,
             paidAmount,
             remainingAmount,

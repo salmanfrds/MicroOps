@@ -5,6 +5,7 @@ import CustomerDetailModal from '../../../shared/components/CustomerDetailModal.
 import { useProductsStore } from '../../products/stores/products'
 import { useInventoryStore } from '../../inventory/stores/inventory'
 import { useCustomersStore } from '../../customer/stores/customers'
+import { useDiscountsStore } from '../../customer/stores/discounts'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 import { useCurrency } from '../../../shared/composables/useCurrency'
@@ -15,6 +16,7 @@ const salesStore = useSalesStore()
 const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
 const customersStore = useCustomersStore()
+const discountsStore = useDiscountsStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
 const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
@@ -206,6 +208,19 @@ const cartItems = computed(() =>
 
 const cartTotal = computed(() => cartItems.value.reduce((acc, i) => acc + i.subtotal, 0))
 
+// --- DISCOUNT ---
+const selectedDiscountId = ref(null)
+const selectedDiscount = computed(() =>
+  discountsStore.activeDiscounts.find(d => d.id === selectedDiscountId.value) || null
+)
+const discountAmount = computed(() => {
+  if (!selectedDiscount.value || !selectedCustomerId.value) return 0
+  const d = selectedDiscount.value
+  if (d.type === 'percentage') return Math.round(cartTotal.value * d.value) / 100
+  return Math.min(d.value, cartTotal.value)
+})
+const finalTotal = computed(() => Math.max(0, cartTotal.value - discountAmount.value))
+
 // --- ORDER HELPERS ---
 const formatDate = (ts) => {
   if (!ts) return '—'
@@ -298,10 +313,10 @@ const hasRentalItems = computed(() => cartItems.value.some(i => i.isRental))
 const canUsePartialPayment = computed(() => hasRentalItems.value && !!selectedCustomerId.value)
 
 const amountDueNow = computed(() => {
-  if (!partialPaymentEnabled.value) return cartTotal.value
-  return Math.round(cartTotal.value * partialPaymentPercent.value) / 100
+  if (!partialPaymentEnabled.value) return finalTotal.value
+  return Math.round(finalTotal.value * partialPaymentPercent.value) / 100
 })
-const remainingBalance = computed(() => cartTotal.value - amountDueNow.value)
+const remainingBalance = computed(() => finalTotal.value - amountDueNow.value)
 
 const settlingOrderId = ref(null)
 const detailCustomerId = ref(null)
@@ -390,6 +405,7 @@ const openNewOrderModal = () => {
   partialPaymentPercent.value = 50
   serviceScheduledAt.value = {}
   serviceOrderNotes.value = ''
+  selectedDiscountId.value = null
   isModalOpen.value = true
 }
 
@@ -445,6 +461,9 @@ const confirmPayment = async () => {
         ? { enabled: true, percent: partialPaymentPercent.value, paidAmount: amountDueNow.value }
         : { enabled: false },
       serviceNotes: hasServiceItems.value ? serviceOrderNotes.value : null,
+      discount: selectedDiscount.value
+        ? { id: selectedDiscount.value.id, name: selectedDiscount.value.name, type: selectedDiscount.value.type, value: selectedDiscount.value.value, amount: discountAmount.value }
+        : null,
     })
     success = true
   } catch (err) {
@@ -466,6 +485,9 @@ const receiptData = computed(() => {
     return {
       id: selectedOrder.value.orderNumber,
       date: formatDate(selectedOrder.value.createdAt),
+      subtotal: selectedOrder.value.subtotal ?? selectedOrder.value.total,
+      discountAmount: selectedOrder.value.discountAmount || 0,
+      discountName: selectedOrder.value.discountName || null,
       total: selectedOrder.value.total,
       paidAmount: selectedOrder.value.paidAmount ?? selectedOrder.value.total,
       remainingAmount: selectedOrder.value.remainingAmount ?? 0,
@@ -476,7 +498,10 @@ const receiptData = computed(() => {
   return {
     id: '—',
     date: new Date().toLocaleDateString('en-MY'),
-    total: cartTotal.value,
+    subtotal: cartTotal.value,
+    discountAmount: discountAmount.value,
+    discountName: selectedDiscount.value?.name || null,
+    total: finalTotal.value,
     paidAmount: amountDueNow.value,
     remainingAmount: partialPaymentEnabled.value ? remainingBalance.value : 0,
     paymentStatus: partialPaymentEnabled.value ? 'Partial' : 'Paid',
@@ -805,6 +830,18 @@ const receiptData = computed(() => {
 
 
 
+                <!-- Discount selector — registered customers only -->
+                <div v-if="selectedCustomerId && discountsStore.activeDiscounts.length > 0" class="space-y-1.5">
+                  <label class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Apply Discount</label>
+                  <select v-model="selectedDiscountId"
+                    class="w-full text-xs p-2 border border-emerald-200 dark:border-emerald-700 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-emerald-400">
+                    <option :value="null">No discount</option>
+                    <option v-for="d in discountsStore.activeDiscounts" :key="d.id" :value="d.id">
+                      {{ d.name }} — {{ d.type === 'percentage' ? d.value + '% off' : fmtMoney(d.value) + ' off' }}
+                    </option>
+                  </select>
+                </div>
+
                 <!-- Service notes — shown when cart has service items -->
                 <div v-if="hasServiceItems" class="space-y-1">
                   <label class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">Service Notes</label>
@@ -840,10 +877,16 @@ const receiptData = computed(() => {
 
                 <div class="space-y-1 text-sm">
                   <div class="flex justify-between text-gray-500 dark:text-gray-400">
-                    <span>Total</span><span>{{ fmtMoney(cartTotal) }}</span>
+                    <span>{{ discountAmount > 0 ? 'Subtotal' : 'Total' }}</span><span>{{ fmtMoney(cartTotal) }}</span>
+                  </div>
+                  <div v-if="discountAmount > 0" class="flex justify-between text-emerald-600 dark:text-emerald-400 text-xs font-bold">
+                    <span>Discount ({{ selectedDiscount?.name }})</span><span>-{{ fmtMoney(discountAmount) }}</span>
                   </div>
                   <template v-if="partialPaymentEnabled && canUsePartialPayment">
-                    <div class="flex justify-between text-amber-600 dark:text-amber-400 font-bold border-t border-gray-100 dark:border-gray-700 pt-1">
+                    <div class="flex justify-between text-gray-700 dark:text-gray-300 font-bold border-t border-gray-100 dark:border-gray-700 pt-1">
+                      <span>Total</span><span>{{ fmtMoney(finalTotal) }}</span>
+                    </div>
+                    <div class="flex justify-between text-amber-600 dark:text-amber-400 font-bold">
                       <span>Pay Now ({{ partialPaymentPercent }}%)</span><span>{{ fmtMoney(amountDueNow) }}</span>
                     </div>
                     <div class="flex justify-between text-gray-400 dark:text-gray-500 text-xs">
@@ -851,7 +894,7 @@ const receiptData = computed(() => {
                     </div>
                   </template>
                   <div v-else class="flex justify-between font-bold text-gray-800 dark:text-white text-base border-t border-gray-100 dark:border-gray-700 pt-1">
-                    <span>Due Now</span><span>{{ fmtMoney(cartTotal) }}</span>
+                    <span>Due Now</span><span>{{ fmtMoney(finalTotal) }}</span>
                   </div>
                 </div>
 
@@ -925,7 +968,13 @@ const receiptData = computed(() => {
                 <div v-if="!receiptData.items?.length" class="text-center italic text-gray-400">No items</div>
               </div>
               <div class="space-y-1.5">
-                <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+                <div v-if="receiptData.discountAmount > 0" class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+                  <span>Subtotal</span><span>{{ fmtMoney(receiptData.subtotal) }}</span>
+                </div>
+                <div v-if="receiptData.discountAmount > 0" class="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-bold">
+                  <span>Discount ({{ receiptData.discountName }})</span><span>-{{ fmtMoney(receiptData.discountAmount) }}</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400" :class="receiptData.discountAmount > 0 ? 'border-t border-gray-100 dark:border-gray-700 pt-1' : ''">
                   <span>Total</span><span>{{ fmtMoney(receiptData.total) }}</span>
                 </div>
                 <div class="flex justify-between font-bold text-base text-gray-800 dark:text-white border-t border-gray-100 dark:border-gray-700 pt-1">

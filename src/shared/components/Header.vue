@@ -1,9 +1,11 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../modules/auth/stores/auth'
 import { useAuth } from '../../modules/auth/composables/useAuth'
 import { useChatStore } from '../stores/chat'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '../lib/firebaseClient'
 
 const emit = defineEmits(['toggle-chat'])
 
@@ -11,6 +13,20 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { logout } = useAuth()
 const chatStore = useChatStore()
+
+const businessName = ref('')
+const businessLogoUrl = ref('')
+
+watch(() => authStore.user?.businessId, async (bizId) => {
+  if (!bizId) return
+  try {
+    const snap = await getDoc(doc(db, 'businesses', bizId))
+    if (snap.exists()) {
+      businessName.value = snap.data().name || ''
+      businessLogoUrl.value = snap.data().logoUrl || ''
+    }
+  } catch {}
+}, { immediate: true })
 
 const isOpen = ref(false)
 const dropdownRef = ref(null)
@@ -136,8 +152,16 @@ const handleClickOutside = (event) => {
       <div v-if="isOpen"
         class="absolute right-4 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
         
-        <div class="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
-          <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Profile Settings</p>
+        <!-- Business identity -->
+        <div class="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center">
+            <img v-if="businessLogoUrl" :src="businessLogoUrl" class="w-full h-full object-cover" alt="logo" />
+            <span v-else class="text-[#004D40] dark:text-teal-400 font-bold text-sm">{{ businessName ? businessName.charAt(0).toUpperCase() : '?' }}</span>
+          </div>
+          <div class="flex flex-col leading-tight min-w-0">
+            <span class="text-sm font-bold text-gray-800 dark:text-white truncate">{{ businessName || 'My Business' }}</span>
+            <span class="text-[10px] text-gray-400 dark:text-gray-500 font-medium uppercase tracking-wider">Business</span>
+          </div>
         </div>
 
         <ul class="py-1">
