@@ -22,12 +22,17 @@ export const useSalesStore = defineStore('sales', () => {
         return bizId
     }
 
-    const createOrder = async ({ customerName, customerId, items, paymentMethod }) => {
+    const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes }) => {
         const bizId = getBizId()
         const total = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
         const orderNumber = `#${Date.now().toString().slice(-5)}`
         const hasRentals = items.some(i => i.isRental)
+        const hasServices = items.some(i => i.isService)
         const nowMs = Date.now()
+
+        const isPartial = partialPayment?.enabled && partialPayment.paidAmount > 0
+        const paidAmount = isPartial ? partialPayment.paidAmount : total
+        const remainingAmount = isPartial ? total - partialPayment.paidAmount : 0
 
         const processedItems = items.map(item => {
             if (item.isRental) {
@@ -48,10 +53,15 @@ export const useSalesStore = defineStore('sales', () => {
             customerId: customerId || null,
             items: processedItems,
             total,
-            status: hasRentals ? 'Active' : 'Completed',
+            paidAmount,
+            remainingAmount,
+            status: hasRentals ? 'Active' : hasServices ? 'Scheduled' : 'Completed',
             hasRentals,
+            hasServices,
+            serviceNotes: serviceNotes || null,
             paymentMethod: paymentMethod || 'Cash',
-            paymentStatus: 'Paid',
+            paymentStatus: isPartial ? 'Partial' : 'Paid',
+            partialPercent: isPartial ? partialPayment.percent : null,
             createdAt: serverTimestamp()
         })
 
@@ -77,11 +87,41 @@ export const useSalesStore = defineStore('sales', () => {
         }
     }
 
+    const advanceServiceOrder = async (orderId, currentStatus) => {
+        const bizId = getBizId()
+        const next = currentStatus === 'Scheduled' ? 'In Progress' : 'Completed'
+        await updateDoc(doc(db, `businesses/${bizId}/orders`, orderId), {
+            status: next,
+            ...(next === 'Completed' ? { completedAt: serverTimestamp() } : {}),
+            updatedAt: serverTimestamp()
+        })
+    }
+
+    const completeServiceOrder = async (orderId, completionNote) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/orders`, orderId), {
+            status: 'Completed',
+            completionNote: completionNote || null,
+            completedAt: serverTimestamp()
+        })
+    }
+
+    const settleBalance = async (orderId) => {
+        const bizId = getBizId()
+        const orderDoc = doc(db, `businesses/${bizId}/orders`, orderId)
+        await updateDoc(orderDoc, {
+            paymentStatus: 'Paid',
+            remainingAmount: 0,
+            partialPercent: null,
+            settledAt: serverTimestamp()
+        })
+    }
+
     const updateOrderStatus = async (orderId, status) => {
         const bizId = getBizId()
         const orderDoc = doc(db, `businesses/${bizId}/orders`, orderId)
         await updateDoc(orderDoc, { status, updatedAt: serverTimestamp() })
     }
 
-    return { orders, createOrder, completeRentalOrder, updateOrderStatus }
+    return { orders, createOrder, completeRentalOrder, advanceServiceOrder, completeServiceOrder, updateOrderStatus, settleBalance }
 })

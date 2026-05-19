@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed } from 'vue'
-import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { useCollection } from 'vuefire'
 import { db } from '../../../shared/lib/firebaseClient'
 import { useAuthStore } from '../../auth/stores/auth'
@@ -22,19 +22,15 @@ export const useCustomersStore = defineStore('customers', () => {
         return bizId
     }
 
-    // Add new customer
+    // Add new customer — returns the new document ID
     const addCustomer = async (customerData) => {
-        try {
-            const bizId = getBizId()
-            const collRef = collection(db, `businesses/${bizId}/customers`)
-            await addDoc(collRef, {
-                ...customerData,
-                createdAt: serverTimestamp()
-            })
-        } catch (error) {
-            console.error('Error adding customer:', error)
-            throw error
-        }
+        const bizId = getBizId()
+        const collRef = collection(db, `businesses/${bizId}/customers`)
+        const docRef = await addDoc(collRef, {
+            ...customerData,
+            createdAt: serverTimestamp()
+        })
+        return docRef.id
     }
 
     // Update existing customer
@@ -64,10 +60,26 @@ export const useCustomersStore = defineStore('customers', () => {
         }
     }
 
+    const addDocument = async (customerId, docEntry) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/customers`, customerId), {
+            documents: arrayUnion(docEntry)
+        })
+    }
+
+    const removeDocument = async (customerId, docEntry) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/customers`, customerId), {
+            documents: arrayRemove(docEntry)
+        })
+    }
+
     return {
         items,
         addCustomer,
         updateCustomer,
-        deleteCustomer
+        deleteCustomer,
+        addDocument,
+        removeDocument,
     }
 })
