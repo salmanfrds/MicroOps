@@ -112,8 +112,8 @@ const isAddModalOpen = ref(false)
 const isEditModalOpen = ref(false)
 const editId = ref(null)
 
-const addForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
-const editForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
+const addForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
+const editForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
 
 const addImageFile = ref(null)
 const addImagePreview = ref('')
@@ -170,7 +170,7 @@ const deleteCategory = async (idx, formRef) => {
 
 onMounted(loadCategories)
 
-const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '' })
+const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
 
 const openAddModal = () => {
     addForm.value = emptyForm()
@@ -189,7 +189,10 @@ const openEditModal = (product) => {
         category: product.category || 'General',
         inventoryId: product.inventoryId || '',
         rateUnit: product.rateUnit || 'hour',
-        maxDuration: product.maxDuration || ''
+        maxDuration: product.maxDuration || '',
+        serviceDuration: product.serviceDuration || '',
+        serviceDurationUnit: product.serviceDurationUnit || 'hour',
+        defaultNotes: product.defaultNotes || ''
     }
     editImageFile.value = null
     editImagePreview.value = product.imageUrl || ''
@@ -372,6 +375,12 @@ const handleDelete = async () => {
                      class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide">
                      {{ product.rentalStatus || 'Available' }}
                    </span>
+                   <span v-else-if="product.type === 'Service'">
+                     <span v-if="product.serviceDuration" class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400">
+                       ~{{ product.serviceDuration }} {{ product.serviceDurationUnit === 'hour' ? 'hr(s)' : 'day(s)' }}
+                     </span>
+                     <span v-else class="text-sm font-medium text-gray-400 dark:text-gray-500">—</span>
+                   </span>
                    <span v-else class="text-sm font-medium text-gray-400 dark:text-gray-500">—</span>
                  </div>
               </td>
@@ -483,6 +492,33 @@ const handleDelete = async () => {
                             <input v-model="addForm.maxDuration" type="number" min="1" :placeholder="addForm.rateUnit === 'hour' ? 'e.g. 48' : 'e.g. 7'" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
                         </div>
                     </div>
+
+                    <!-- Service-specific fields -->
+                    <template v-if="addForm.type === 'Service'">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Est. Duration</label>
+                                <div class="flex gap-2">
+                                    <button @click="addForm.serviceDurationUnit = 'hour'"
+                                        :class="addForm.serviceDurationUnit === 'hour' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                        class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
+                                    <button @click="addForm.serviceDurationUnit = 'day'"
+                                        :class="addForm.serviceDurationUnit === 'day' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                        class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ addForm.serviceDurationUnit === 'hour' ? 'Hours' : 'Days' }} (Optional)</label>
+                                <input v-model="addForm.serviceDuration" type="number" min="1" :placeholder="addForm.serviceDurationUnit === 'hour' ? 'e.g. 2' : 'e.g. 1'"
+                                    class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white transition-shadow" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Default Notes <span class="text-[10px] font-normal text-gray-400 ml-1">pre-fills when booking</span></label>
+                            <textarea v-model="addForm.defaultNotes" rows="2" placeholder="e.g. Please prepare the area before technician arrives…"
+                                class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white resize-none text-sm transition-shadow"></textarea>
+                        </div>
+                    </template>
 
                     <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'">
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
@@ -618,6 +654,33 @@ const handleDelete = async () => {
                             <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
                         </select>
                     </div>
+
+                    <!-- Service-specific fields -->
+                    <template v-if="editForm.type === 'Service'">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Est. Duration</label>
+                                <div class="flex gap-2">
+                                    <button @click="editForm.serviceDurationUnit = 'hour'"
+                                        :class="editForm.serviceDurationUnit === 'hour' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                        class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Hour</button>
+                                    <button @click="editForm.serviceDurationUnit = 'day'"
+                                        :class="editForm.serviceDurationUnit === 'day' ? 'bg-[#004D40] dark:bg-teal-700 text-white shadow-md' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                        class="flex-1 py-2.5 rounded-lg text-sm font-bold transition-all focus:outline-none">Per Day</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{{ editForm.serviceDurationUnit === 'hour' ? 'Hours' : 'Days' }} (Optional)</label>
+                                <input v-model="editForm.serviceDuration" type="number" min="1" :placeholder="editForm.serviceDurationUnit === 'hour' ? 'e.g. 2' : 'e.g. 1'"
+                                    class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white transition-shadow" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Default Notes <span class="text-[10px] font-normal text-gray-400 ml-1">pre-fills when booking</span></label>
+                            <textarea v-model="editForm.defaultNotes" rows="2" placeholder="e.g. Please prepare the area before technician arrives…"
+                                class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#4DB6AC] outline-none text-gray-700 dark:text-white resize-none text-sm transition-shadow"></textarea>
+                        </div>
+                    </template>
 
                     <div class="pt-2 flex gap-3">
                         <button @click="handleDelete" class="py-3 px-4 rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 font-bold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">Delete</button>

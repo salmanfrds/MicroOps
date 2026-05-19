@@ -74,17 +74,31 @@ export const useSalesStore = defineStore('sales', () => {
         }
     }
 
-    const completeRentalOrder = async (orderId, items) => {
+    // Called when rental countdown expires. Partial rentals go to 'Return Due'; full pay go straight to 'Completed'.
+    const completeRentalOrder = async (orderId, items, isPartial = false) => {
         const bizId = getBizId()
         await updateDoc(doc(db, `businesses/${bizId}/orders`, orderId), {
-            status: 'Completed',
-            completedAt: serverTimestamp()
+            status: isPartial ? 'Return Due' : 'Completed',
+            ...(isPartial ? {} : { completedAt: serverTimestamp() }),
         })
+        // Item is physically back — mark available regardless of payment status
         for (const item of items) {
             if (item.isRental && item.inventoryId) {
                 await inventoryStore.setRentalStatus(item.inventoryId, 'Available')
             }
         }
+    }
+
+    const collectFinalPayment = async (orderId, paymentMethod) => {
+        const bizId = getBizId()
+        await updateDoc(doc(db, `businesses/${bizId}/orders`, orderId), {
+            status: 'Completed',
+            paymentStatus: 'Paid',
+            remainingAmount: 0,
+            partialPercent: null,
+            finalPaymentMethod: paymentMethod || 'Cash',
+            completedAt: serverTimestamp(),
+        })
     }
 
     const advanceServiceOrder = async (orderId, currentStatus) => {
@@ -123,5 +137,5 @@ export const useSalesStore = defineStore('sales', () => {
         await updateDoc(orderDoc, { status, updatedAt: serverTimestamp() })
     }
 
-    return { orders, createOrder, completeRentalOrder, advanceServiceOrder, completeServiceOrder, updateOrderStatus, settleBalance }
+    return { orders, createOrder, completeRentalOrder, collectFinalPayment, advanceServiceOrder, completeServiceOrder, updateOrderStatus, settleBalance }
 })

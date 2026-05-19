@@ -6,6 +6,8 @@ import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 import { storage } from '../../../shared/lib/firebaseClient'
 import { useCurrency } from '../../../shared/composables/useCurrency'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 const financeStore = useFinanceStore()
 const authStore = useAuthStore()
@@ -13,13 +15,7 @@ const toastStore = useToastStore()
 
 const viewAllType = ref(null) // 'income' | 'expense' | null
 
-const tableIncome = computed(() => {
-  return financeStore.allIncome.slice(0, 15)
-})
-
-const tableExpenses = computed(() => {
-  return financeStore.allExpenses.slice(0, 15)
-})
+const tableIncome = computed(() => financeStore.allIncome.slice(0, 15))
 
 const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
   new Promise((resolve) => {
@@ -42,6 +38,169 @@ const compressImage = (file, maxWidth = 1200, quality = 0.85) =>
 // --- CATEGORY LISTS ---
 const incomeCategories = ['Service Income', 'Investment Returns', 'Rental Income', 'Refunds Received', 'Other Income']
 const expenseCategories = ['Bills & Utilities', 'Rent / Mortgage', 'Salaries', 'Marketing', 'Equipment', 'Maintenance', 'Transport', 'Insurance', 'Other Expenses']
+
+// --- EXPENSE GROUPS ---
+const EXPENSE_GROUPS = {
+  'Cost of Goods': { categories: ['Procurement'], color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-500' },
+  'Overhead':      { categories: ['Rent / Mortgage', 'Salaries', 'Insurance'], color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400', dot: 'bg-red-500' },
+  'Operations':    { categories: ['Bills & Utilities', 'Marketing', 'Maintenance', 'Transport'], color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', dot: 'bg-amber-500' },
+  'Other':         { categories: [], color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400', dot: 'bg-gray-400' },
+}
+
+const getExpenseGroup = (category) => {
+  for (const [group, cfg] of Object.entries(EXPENSE_GROUPS)) {
+    if (cfg.categories.includes(category)) return group
+  }
+  return 'Other'
+}
+
+const expenseBreakdown = computed(() =>
+  Object.entries(EXPENSE_GROUPS).map(([group, cfg]) => {
+    const entries = financeStore.allExpenses.filter(e => getExpenseGroup(e.category) === group)
+    return { group, total: entries.reduce((acc, e) => acc + (e.amount || 0), 0), count: entries.length, ...cfg }
+  }).filter(g => g.count > 0)
+)
+
+const expenseGroupFilter = ref('')
+
+const tableExpenses = computed(() => {
+  const list = expenseGroupFilter.value
+    ? financeStore.allExpenses.filter(e => getExpenseGroup(e.category) === expenseGroupFilter.value)
+    : financeStore.allExpenses
+  return list.slice(0, 15)
+})
+
+// --- PDF EXPORT ---
+const showExportDialog = ref(false)
+const exportRange = reactive({
+  from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+  to: new Date().toISOString().split('T')[0],
+})
+
+const exportingPDF = ref(false)
+
+const generatePDF = async () => {
+  exportingPDF.value = true
+  try {
+    const from = new Date(exportRange.from)
+    const to = new Date(exportRange.to)
+    to.setHours(23, 59, 59)
+
+    const inRange = (dateStr) => {
+      if (!dateStr) return true
+      const d = new Date(dateStr)
+      return d >= from && d <= to
+    }
+
+    const income = financeStore.allIncome.filter(e => inRange(e.date))
+    const expenses = financeStore.allExpenses.filter(e => inRange(e.date))
+    const totalInc = income.reduce((a, e) => a + (e.amount || 0), 0)
+    const totalExp = expenses.reduce((a, e) => a + (e.amount || 0), 0)
+    const bizName = authStore.user?.businessName || 'Business'
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    let y = 18
+
+    // Header
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0, 77, 64)
+    doc.text('Financial Report', pageW / 2, y, { align: 'center' })
+    y += 7
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100)
+    doc.text(`${bizName}  ·  ${formatDate(exportRange.from)} – ${formatDate(exportRange.to)}`, pageW / 2, y, { align: 'center' })
+    y += 10
+
+    // Summary
+    autoTable(doc, {
+      startY: y,
+      head: [['Net Balance', 'Total Income', 'Total Expenses']],
+      body: [[formatMoney(totalInc - totalExp), formatMoney(totalInc), formatMoney(totalExp)]],
+      headStyles: { fillColor: [0, 77, 64], fontStyle: 'bold', fontSize: 10 },
+      bodyStyles: { fontSize: 11, fontStyle: 'bold', halign: 'center' },
+      theme: 'grid',
+    })
+    y = doc.lastAutoTable.finalY + 8
+
+    // Expense breakdown
+    const breakdown = Object.entries(EXPENSE_GROUPS).map(([group]) => {
+      const grpExpenses = expenses.filter(e => getExpenseGroup(e.category) === group)
+      return { group, total: grpExpenses.reduce((a, e) => a + (e.amount || 0), 0), count: grpExpenses.length }
+    }).filter(g => g.count > 0)
+
+    if (breakdown.length) {
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(50)
+      doc.text('Expense Breakdown', 14, y)
+      y += 4
+      autoTable(doc, {
+        startY: y,
+        head: [['Group', 'Entries', 'Total']],
+        body: breakdown.map(b => [b.group, b.count, formatMoney(b.total)]),
+        headStyles: { fillColor: [220, 53, 69], fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: { 2: { halign: 'right' } },
+        theme: 'striped',
+      })
+      y = doc.lastAutoTable.finalY + 8
+    }
+
+    // Income table
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(50)
+    doc.text('Income Entries', 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Category', 'Remarks', 'Amount']],
+      body: income.map(e => [formatDate(e.date), e.category, e.remarks || '—', formatMoney(e.amount)]),
+      headStyles: { fillColor: [5, 150, 105], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: { 3: { halign: 'right' } },
+      theme: 'striped',
+      foot: [['', '', 'Total', formatMoney(totalInc)]],
+      footStyles: { fontStyle: 'bold', fillColor: [220, 252, 231] },
+    })
+    y = doc.lastAutoTable.finalY + 8
+
+    // Expense table
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(50)
+    doc.text('Expense Entries', 14, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Group', 'Category', 'Remarks', 'Amount']],
+      body: expenses.map(e => [formatDate(e.date), getExpenseGroup(e.category), e.category, e.remarks || '—', formatMoney(e.amount)]),
+      headStyles: { fillColor: [220, 53, 69], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: { 4: { halign: 'right' } },
+      theme: 'striped',
+      foot: [['', '', '', 'Total', formatMoney(totalExp)]],
+      footStyles: { fontStyle: 'bold', fillColor: [254, 226, 226] },
+    })
+
+    // Footer
+    const pages = doc.internal.getNumberOfPages()
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.setTextColor(180)
+      doc.text(`Generated by MicroOps · Page ${i} of ${pages}`, pageW / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' })
+    }
+
+    doc.save(`financial-report-${exportRange.from}-to-${exportRange.to}.pdf`)
+    showExportDialog.value = false
+  } finally {
+    exportingPDF.value = false
+  }
+}
 
 // --- MODAL STATE ---
 const activeModal = ref(null)
@@ -172,6 +331,16 @@ const originLabel = (origin) => {
         <p class="mt-2 text-gray-600 dark:text-gray-400">Track your business cash flow — sales, stock, and manual entries.</p>
       </div>
 
+      <div class="flex justify-end mt-2 mb-1">
+        <button @click="showExportDialog = true"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-600 dark:text-gray-300 hover:border-teal-400 dark:hover:border-teal-500 hover:text-teal-600 dark:hover:text-teal-400 transition-colors shadow-sm">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Export PDF Report
+        </button>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-5">
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col transition-colors">
           <span class="text-gray-500 dark:text-gray-400 text-sm font-medium uppercase tracking-wider">Net Balance</span>
@@ -195,6 +364,27 @@ const originLabel = (origin) => {
         </div>
       </div>
     </header>
+
+    <!-- Expense breakdown by group -->
+    <div v-if="expenseBreakdown.length > 0" class="mt-6 mb-8">
+      <p class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Expense Breakdown</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <button v-for="g in expenseBreakdown" :key="g.group"
+          @click="expenseGroupFilter = expenseGroupFilter === g.group ? '' : g.group"
+          :class="[g.color, expenseGroupFilter === g.group ? 'ring-2 ring-offset-2 ring-offset-[#F8F7F4] dark:ring-offset-gray-900 ring-current opacity-100' : 'opacity-80 hover:opacity-100']"
+          class="flex items-center justify-between p-4 rounded-xl border border-transparent transition-all text-left">
+          <div>
+            <div class="flex items-center gap-1.5 mb-1">
+              <span :class="g.dot" class="w-2 h-2 rounded-full"></span>
+              <span class="text-xs font-bold uppercase tracking-wide">{{ g.group }}</span>
+            </div>
+            <p class="text-lg font-black">{{ formatMoney(g.total) }}</p>
+            <p class="text-[10px] opacity-70 mt-0.5">{{ g.count }} entr{{ g.count === 1 ? 'y' : 'ies' }}</p>
+          </div>
+          <svg v-if="expenseGroupFilter === g.group" class="w-4 h-4 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+        </button>
+      </div>
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
@@ -263,15 +453,32 @@ const originLabel = (origin) => {
 
       <!-- EXPENSES TABLE -->
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
-        <div class="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-          <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full bg-red-500"></div> Expenses
-          </h3>
-          <div class="flex items-center gap-4">
-            <span @click="viewAllType = 'expense'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All Expenses</span>
-            <button @click="openModal('expense')"
-              class="text-sm font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg transition-colors">
-              + Add New
+        <div class="p-6 border-b border-gray-100 dark:border-gray-700">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-red-500"></div>
+              Expenses
+              <span v-if="expenseGroupFilter" class="text-xs font-bold text-red-600 dark:text-red-400">· {{ expenseGroupFilter }}</span>
+            </h3>
+            <div class="flex items-center gap-4">
+              <span @click="viewAllType = 'expense'" class="text-xs font-bold text-[#4DB6AC] dark:text-teal-400 cursor-pointer hover:underline">View All</span>
+              <button @click="openModal('expense')"
+                class="text-sm font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg transition-colors">
+                + Add New
+              </button>
+            </div>
+          </div>
+          <!-- Group filter chips -->
+          <div v-if="expenseBreakdown.length" class="flex flex-wrap gap-1.5">
+            <button @click="expenseGroupFilter = ''"
+              :class="!expenseGroupFilter ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200'"
+              class="px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors">All</button>
+            <button v-for="g in expenseBreakdown" :key="g.group"
+              @click="expenseGroupFilter = expenseGroupFilter === g.group ? '' : g.group"
+              :class="[expenseGroupFilter === g.group ? g.color + ' ring-1 ring-current' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200']"
+              class="px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors flex items-center gap-1">
+              <span :class="g.dot" class="w-1.5 h-1.5 rounded-full"></span>
+              {{ g.group }}
             </button>
           </div>
         </div>
@@ -297,6 +504,10 @@ const originLabel = (origin) => {
                 <td class="p-4">
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-semibold text-gray-800 dark:text-gray-200">{{ item.category }}</span>
+                    <span :class="EXPENSE_GROUPS[getExpenseGroup(item.category)]?.color"
+                      class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded tracking-wide">
+                      {{ getExpenseGroup(item.category) }}
+                    </span>
                     <span v-if="originLabel(item.origin)"
                       class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 tracking-wide">
                       {{ originLabel(item.origin) }}
@@ -596,6 +807,37 @@ const originLabel = (origin) => {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- PDF Export Dialog -->
+    <Teleport to="body">
+      <div v-if="showExportDialog" class="fixed inset-0 z-60 flex items-center justify-center p-4">
+        <div @click="showExportDialog = false" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"></div>
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-gray-100 dark:border-gray-700">
+          <h3 class="font-bold text-gray-800 dark:text-white text-lg mb-1">Export Financial Report</h3>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mb-5">Generates a PDF with income, expenses and breakdown by group.</p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">From</label>
+              <input v-model="exportRange.from" type="date"
+                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none text-gray-800 dark:text-white text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">To</label>
+              <input v-model="exportRange.to" type="date"
+                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none text-gray-800 dark:text-white text-sm" />
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button @click="showExportDialog = false" class="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 font-bold text-sm">Cancel</button>
+            <button @click="generatePDF" :disabled="exportingPDF"
+              class="flex-1 py-3 rounded-xl bg-[#004D40] dark:bg-teal-700 text-white font-bold text-sm hover:bg-[#00695C] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              <svg v-if="exportingPDF" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              {{ exportingPDF ? 'Generating…' : 'Download PDF' }}
+            </button>
           </div>
         </div>
       </div>

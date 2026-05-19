@@ -2,11 +2,13 @@
 import { ref, computed } from 'vue';
 import Sidebar from './shared/components/Sidebar.vue';
 import Header from './shared/components/Header.vue';
+import ChatPanel from './shared/components/ChatPanel.vue';
 import ToastContainer from './shared/components/ToastContainer.vue';
 import { useRoute } from 'vue-router';
 import { useCurrencyStore, CURRENCY_CONFIG } from './shared/stores/currency';
 
 const isSidebarExpanded = ref(true)
+const isChatOpen = ref(false)
 
 const toggleSidebar = () => {
   isSidebarExpanded.value = !isSidebarExpanded.value
@@ -21,8 +23,9 @@ const currencyStore = useCurrencyStore()
 
 <template>
   <div v-if="requireAuth && !hideNavigation" class="flex h-screen bg-[#F8F7F4] dark:bg-gray-900 text-[#5A5A5A] dark:text-gray-100 transition-colors duration-300">
-    <Header />
+    <Header @toggle-chat="isChatOpen = !isChatOpen" />
     <Sidebar :isExpanded="isSidebarExpanded" @toggle="toggleSidebar" />
+    <ChatPanel :open="isChatOpen" @close="isChatOpen = false" />
 
     <main class="flex-1 overflow-y-auto transition-all duration-300">
       <div class="p-6 md:p-10 dark:text-gray-100">

@@ -121,7 +121,13 @@ const increment = (productId) => {
   if (!product) return
   const stock = getProductStock(product)
   const current = cartQty.value[productId] || 0
-  if (current < stock) cartQty.value[productId] = current + 1
+  if (current < stock) {
+    cartQty.value[productId] = current + 1
+    // Pre-fill service notes from product default on first add
+    if (product.type === 'Service' && current === 0 && product.defaultNotes && !serviceOrderNotes.value) {
+      serviceOrderNotes.value = product.defaultNotes
+    }
+  }
 }
 
 const decrement = (productId) => {
@@ -182,6 +188,7 @@ const cartItems = computed(() =>
         subtotal: p.qty * p.price,
         isService: true,
         scheduledAt: serviceScheduledAt.value[p.id] || null,
+        estimatedDuration: p.serviceDuration ? `${p.serviceDuration} ${p.serviceDurationUnit === 'hour' ? 'hr(s)' : 'day(s)'}` : null,
       }
     }
     return {
@@ -228,6 +235,7 @@ const getStatusColor = (status) => {
     case 'Completed':  return 'text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30'
     case 'Processing': return 'text-yellow-800 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30'
     case 'Active':      return 'text-blue-800 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30'
+    case 'Return Due':  return 'text-rose-800 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30'
     case 'Scheduled':   return 'text-violet-800 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/30'
     case 'In Progress': return 'text-orange-800 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/30'
     case 'Cancelled':  return 'text-red-800 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
@@ -255,7 +263,8 @@ watch(now, async () => {
     if (countdown?.expired) {
       completingOrders.value.add(order.id)
       try {
-        await salesStore.completeRentalOrder(order.id, order.items || [])
+        const isPartial = order.paymentStatus === 'Partial'
+        await salesStore.completeRentalOrder(order.id, order.items || [], isPartial)
       } finally {
         completingOrders.value.delete(order.id)
       }
@@ -296,6 +305,31 @@ const remainingBalance = computed(() => cartTotal.value - amountDueNow.value)
 
 const settlingOrderId = ref(null)
 const detailCustomerId = ref(null)
+
+// --- COLLECT FINAL PAYMENT (rental return due) ---
+const collectOrder = ref(null)
+const collectPaymentMethod = ref('Cash')
+const collectingPayment = ref(false)
+
+const openCollectPayment = (order) => {
+  collectOrder.value = order
+  collectPaymentMethod.value = 'Cash'
+}
+
+const confirmCollectPayment = async () => {
+  if (!collectOrder.value || collectingPayment.value) return
+  collectingPayment.value = true
+  const tid = toastStore.loading('Processing final payment...')
+  try {
+    await salesStore.collectFinalPayment(collectOrder.value.id, collectPaymentMethod.value)
+    toastStore.replace(tid, 'success', 'Final payment collected — rental complete')
+    collectOrder.value = null
+  } catch {
+    toastStore.replace(tid, 'error', 'Failed to process payment.')
+  } finally {
+    collectingPayment.value = false
+  }
+}
 
 // --- SERVICE ---
 const serviceScheduledAt = ref({})  // productId → datetime string
@@ -515,7 +549,11 @@ const receiptData = computed(() => {
                 <span :class="['px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide rounded-full', getStatusColor(order.status)]">
                   {{ order.status }}
                 </span>
-                <span v-if="order.paymentStatus === 'Partial'"
+                <span v-if="order.status === 'Return Due'"
+                  class="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+                  Balance {{ fmtMoney(order.remainingAmount) }}
+                </span>
+                <span v-else-if="order.paymentStatus === 'Partial'"
                   class="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
                   Partial · {{ fmtMoney(order.remainingAmount) }} due
                 </span>
@@ -540,7 +578,15 @@ const receiptData = computed(() => {
                   :title="order.status === 'Scheduled' ? 'Mark In Progress' : 'Mark Completed'">
                   {{ order.status === 'Scheduled' ? '▶' : '✓' }}
                 </button>
-                <button v-if="order.paymentStatus === 'Partial'"
+                <!-- Collect final payment for rental return-due orders -->
+                <button v-if="order.status === 'Return Due'"
+                  @click="openCollectPayment(order)"
+                  class="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white transition-colors"
+                  title="Collect remaining balance">
+                  Collect
+                </button>
+                <!-- Settle for non-rental partial orders -->
+                <button v-else-if="order.paymentStatus === 'Partial'"
                   @click="handleSettleBalance(order.id)"
                   :disabled="settlingOrderId === order.id"
                   class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors disabled:opacity-50"
@@ -733,11 +779,12 @@ const receiptData = computed(() => {
                     <div class="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{{ item.name }}</div>
                     <div class="text-[10px] text-gray-400">
                       <span v-if="item.isRental">{{ item.duration }} {{ item.rateUnit }}(s)</span>
-                      <span v-else-if="item.isService">
+                      <span v-else-if="item.isService" class="flex flex-col gap-0.5">
                         <span v-if="item.scheduledAt" class="text-violet-500 dark:text-violet-400">
                           {{ new Date(item.scheduledAt).toLocaleString('en-MY', { dateStyle: 'short', timeStyle: 'short' }) }}
                         </span>
                         <span v-else class="text-amber-500">No date set</span>
+                        <span v-if="item.estimatedDuration" class="text-gray-400">~{{ item.estimatedDuration }}</span>
                       </span>
                       <span v-else>x{{ item.qty }}</span>
                     </div>
@@ -998,6 +1045,64 @@ const receiptData = computed(() => {
     </Teleport>
 
   <CustomerDetailModal :customerId="detailCustomerId" @close="detailCustomerId = null" />
+
+  <!-- Collect Final Payment dialog (rental return due) -->
+  <Teleport to="body">
+    <div v-if="collectOrder" class="fixed inset-0 z-200 flex items-center justify-center p-4">
+      <div @click="collectOrder = null" class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+      <div class="relative bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
+
+        <!-- Header -->
+        <div class="p-5 bg-rose-50 dark:bg-rose-900/20 border-b border-rose-100 dark:border-rose-800">
+          <h3 class="font-bold text-rose-800 dark:text-rose-300 text-lg">Collect Final Payment</h3>
+          <p class="text-xs text-rose-600 dark:text-rose-400 mt-0.5">Order {{ collectOrder.orderNumber }} · Rental returned</p>
+        </div>
+
+        <div class="p-6 space-y-5">
+          <!-- Amount summary -->
+          <div class="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-4 space-y-1.5">
+            <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+              <span>Total Order</span><span>{{ fmtMoney(collectOrder.total) }}</span>
+            </div>
+            <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+              <span>Deposit Paid</span><span class="text-green-600 dark:text-green-400">{{ fmtMoney(collectOrder.paidAmount) }}</span>
+            </div>
+            <div class="flex justify-between font-bold text-base text-gray-800 dark:text-white border-t border-gray-200 dark:border-gray-700 pt-1.5 mt-1">
+              <span>Balance Due</span><span class="text-rose-600 dark:text-rose-400">{{ fmtMoney(collectOrder.remainingAmount) }}</span>
+            </div>
+          </div>
+
+          <!-- Payment method -->
+          <div>
+            <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Payment Method</p>
+            <div class="grid grid-cols-3 gap-2">
+              <button v-for="method in ['Cash', 'DuitNow', 'Card']" :key="method"
+                @click="collectPaymentMethod = method"
+                :class="collectPaymentMethod === method ? 'bg-[#004D40] text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600'"
+                class="py-2 rounded-lg text-sm font-bold transition-all">
+                {{ method }}
+              </button>
+            </div>
+          </div>
+
+          <!-- DuitNow QR hint -->
+          <div v-if="collectPaymentMethod === 'DuitNow' && duitnowQrUrl" class="flex flex-col items-center">
+            <img :src="duitnowQrUrl" class="w-40 h-40 object-contain rounded-xl border border-gray-200 dark:border-gray-700" alt="DuitNow QR" />
+            <p class="text-xs text-gray-400 mt-2">Ask customer to scan</p>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="px-6 pb-6 flex gap-3">
+          <button @click="collectOrder = null" class="flex-1 py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 font-bold text-sm">Cancel</button>
+          <button @click="confirmCollectPayment" :disabled="collectingPayment"
+            class="flex-1 py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors disabled:opacity-50">
+            {{ collectingPayment ? 'Processing…' : 'Confirm Payment' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Service completion note dialog -->
   <Teleport to="body">
