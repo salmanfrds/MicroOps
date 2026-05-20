@@ -88,8 +88,16 @@ const verifyPin = async () => {
       currency,
     })
 
+    const roleDefaultRoute = {
+      'Owner':             '/',
+      'Manager':           '/',
+      'Cashier':           '/sales',
+      'Inventory Manager': '/inventory',
+    }
+    const defaultRoute = roleDefaultRoute[selectedProfile.value.role] ?? '/'
+
     isPinModalOpen.value = false
-    router.push(onboardingCompleted ? '/' : '/onboarding')
+    router.push(onboardingCompleted ? defaultRoute : '/onboarding')
   } else {
     pinError.value = "Incorrect PIN. Try again."
     enteredPin.value = ''

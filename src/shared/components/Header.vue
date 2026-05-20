@@ -94,7 +94,7 @@ const handleClickOutside = (event) => {
 </script>
 
 <template>
-  <div ref="dropdownRef" class="fixed top-6 right-6 z-50">
+  <div ref="dropdownRef" class="hidden lg:block fixed top-6 right-6 z-50">
 
     <div class="flex gap-4 items-center">
 

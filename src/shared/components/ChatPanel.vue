@@ -102,7 +102,9 @@ const avatarColor = (role = '') => {
       leave-from-class="translate-x-0"
       leave-to-class="translate-x-full">
       <div v-if="open"
-        class="fixed right-0 top-0 h-screen w-80 z-50 flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-2xl">
+        class="fixed right-0 z-50 flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-2xl
+               top-14 h-[calc(100vh-3.5rem)] w-full
+               lg:top-0 lg:h-screen lg:w-80">
 
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-4 border-b border-gray-100 dark:border-gray-700 bg-[#004D40] dark:bg-teal-900">
