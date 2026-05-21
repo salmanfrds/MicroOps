@@ -407,15 +407,15 @@ const handleDelete = async () => {
     <Teleport to="body">
       <div v-if="isAddModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeAddModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
-        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-3xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
             <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
                 <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Add Sellable Item</h3>
                 <button @click="closeAddModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold leading-none">&times;</button>
             </div>
 
-            <div class="flex">
-                <!-- Form — left -->
-                <div class="flex-1 p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row overflow-y-auto max-h-[80vh] sm:max-h-[75vh]">
+                <!-- Form — top on mobile, left on desktop -->
+                <div class="flex-1 p-6 space-y-4 overflow-y-auto">
                     <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Item Type</label>
                         <div class="flex flex-wrap gap-2">
@@ -534,25 +534,24 @@ const handleDelete = async () => {
                     </div>
                 </div>
 
-                <!-- Image upload — right -->
-                <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
-                    <button type="button" @click="addImageInput.click()"
-                        class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors cursor-pointer relative group overflow-hidden">
+                <!-- Image upload — bottom on mobile, right on desktop -->
+                <div class="w-full sm:w-64 shrink-0 border-t sm:border-t-0 sm:border-l border-gray-100 dark:border-gray-700 flex flex-col items-center p-4 gap-3">
+                    <div class="relative w-full h-52 sm:h-auto sm:aspect-3/4 rounded-xl overflow-hidden bg-gray-50 dark:bg-gray-700/50 border-2 border-dashed border-gray-200 dark:border-gray-600 group">
                         <img v-if="addImagePreview" :src="addImagePreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
-                        <template v-if="!addImagePreview">
-                            <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-teal-500 font-medium text-center px-3 leading-relaxed">Click to upload product image</span>
-                        </template>
-                        <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
-                            <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
-                        </div>
-                    </button>
-                    <div v-if="addImagePreview" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
-                        <button type="button" @click="addImageFile = null; addImagePreview = ''"
-                            class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove</button>
+                        <button type="button" @click="addImageInput.click()"
+                            class="absolute inset-0 flex flex-col items-center justify-center gap-2 transition-colors cursor-pointer"
+                            :class="addImagePreview ? 'bg-black/0 hover:bg-black/25' : 'hover:bg-teal-50 dark:hover:bg-teal-900/20'">
+                            <template v-if="!addImagePreview">
+                                <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-teal-500 font-medium text-center px-3">Click to upload product image</span>
+                            </template>
+                            <span v-else class="text-white text-sm font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
+                        </button>
                     </div>
+                    <button v-if="addImagePreview" type="button" @click="addImageFile = null; addImagePreview = ''"
+                        class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove image</button>
                     <input ref="addImageInput" type="file" class="hidden" accept="image/*" @change="handleAddImageUpload" />
                 </div>
             </div>
@@ -561,15 +560,15 @@ const handleDelete = async () => {
 
       <div v-if="isEditModalOpen" class="fixed inset-0 z-60 flex items-center justify-center p-4">
         <div @click="closeEditModal" class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity"></div>
-        <div class="relative bg-white dark:bg-gray-800 w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
+        <div class="relative bg-white dark:bg-gray-800 w-full max-w-3xl rounded-lg shadow-2xl overflow-hidden animate-fade-in-up transition-colors">
             <div class="p-6 border-b border-gray-100 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/20 flex justify-between items-center">
                 <h3 class="text-xl font-bold text-[#004D40] dark:text-teal-300">Edit Sellable Item</h3>
                 <button @click="closeEditModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold leading-none">&times;</button>
             </div>
 
-            <div class="flex">
-                <!-- Form — left -->
-                <div class="flex-1 p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row overflow-y-auto max-h-[80vh] sm:max-h-[75vh]">
+                <!-- Form — top on mobile, left on desktop -->
+                <div class="flex-1 p-6 space-y-4 overflow-y-auto">
                     <div>
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Item Type</label>
                         <div class="flex flex-wrap gap-2">
@@ -689,25 +688,24 @@ const handleDelete = async () => {
                     </div>
                 </div>
 
-                <!-- Image upload — right -->
-                <div class="w-48 shrink-0 border-l border-gray-100 dark:border-gray-700 flex flex-col">
-                    <button type="button" @click="editImageInput.click()"
-                        class="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors cursor-pointer relative group overflow-hidden">
+                <!-- Image upload — bottom on mobile, right on desktop -->
+                <div class="w-full sm:w-64 shrink-0 border-t sm:border-t-0 sm:border-l border-gray-100 dark:border-gray-700 flex flex-col items-center p-4 gap-3">
+                    <div class="relative w-full h-52 sm:h-auto sm:aspect-3/4 rounded-xl overflow-hidden bg-gray-50 dark:bg-gray-700/50 border-2 border-dashed border-gray-200 dark:border-gray-600 group">
                         <img v-if="editImagePreview" :src="editImagePreview" class="absolute inset-0 w-full h-full object-cover" alt="" />
-                        <template v-if="!editImagePreview">
-                            <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 font-medium text-center px-3 leading-relaxed">Click to upload product image</span>
-                        </template>
-                        <div v-else class="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-center pb-3 pointer-events-none">
-                            <span class="text-white text-xs font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
-                        </div>
-                    </button>
-                    <div v-if="editImagePreview" class="border-t border-gray-100 dark:border-gray-700 p-2 flex justify-center">
-                        <button type="button" @click="editImageFile = null; editImagePreview = ''"
-                            class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove</button>
+                        <button type="button" @click="editImageInput.click()"
+                            class="absolute inset-0 flex flex-col items-center justify-center gap-2 transition-colors cursor-pointer"
+                            :class="editImagePreview ? 'bg-black/0 hover:bg-black/25' : 'hover:bg-teal-50 dark:hover:bg-teal-900/20'">
+                            <template v-if="!editImagePreview">
+                                <svg class="w-10 h-10 text-gray-300 dark:text-gray-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="text-xs text-gray-400 dark:text-gray-500 group-hover:text-teal-500 font-medium text-center px-3">Click to upload product image</span>
+                            </template>
+                            <span v-else class="text-white text-sm font-bold drop-shadow opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
+                        </button>
                     </div>
+                    <button v-if="editImagePreview" type="button" @click="editImageFile = null; editImagePreview = ''"
+                        class="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">Remove image</button>
                     <input ref="editImageInput" type="file" class="hidden" accept="image/*" @change="handleEditImageUpload" />
                 </div>
             </div>
