@@ -29,6 +29,15 @@ export const useDiscountsStore = defineStore('discounts', () => {
     })
   })
 
+  // Maps productId → active discount for quick lookup in Sales
+  const productDiscountMap = computed(() => {
+    const map = {}
+    activeDiscounts.value.forEach(d => {
+      if (d.productId) map[d.productId] = d
+    })
+    return map
+  })
+
   const addDiscount = async (data) => {
     const bizId = getBizId()
     await addDoc(collection(db, `businesses/${bizId}/discounts`), {
@@ -47,5 +56,5 @@ export const useDiscountsStore = defineStore('discounts', () => {
     await deleteDoc(doc(db, `businesses/${bizId}/discounts`, id))
   }
 
-  return { discounts, activeDiscounts, addDiscount, updateDiscount, deleteDiscount }
+  return { discounts, activeDiscounts, productDiscountMap, addDiscount, updateDiscount, deleteDiscount }
 })

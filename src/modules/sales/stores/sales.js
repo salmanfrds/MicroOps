@@ -22,7 +22,7 @@ export const useSalesStore = defineStore('sales', () => {
         return bizId
     }
 
-    const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes, discount }) => {
+    const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes, discount, subtotalRaw, lineDiscountsTotal }) => {
         const bizId = getBizId()
         const subtotal = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
         const discountAmount = discount?.amount || 0
@@ -54,7 +54,8 @@ export const useSalesStore = defineStore('sales', () => {
             customerName: customerName || 'Walk-in Customer',
             customerId: customerId || null,
             items: processedItems,
-            subtotal,
+            subtotal: subtotalRaw ?? subtotal,
+            lineDiscountsTotal: lineDiscountsTotal || 0,
             discountId: discount?.id || null,
             discountName: discount?.name || null,
             discountType: discount?.type || null,

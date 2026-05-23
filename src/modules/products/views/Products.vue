@@ -7,11 +7,13 @@ import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 import { useCurrency } from '../../../shared/composables/useCurrency'
 import { db } from '../../../shared/lib/firebaseClient'
+import { useRouter } from 'vue-router'
 
 const productsStore = useProductsStore()
 const inventoryStore = useInventoryStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
+const router = useRouter()
 const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
 
 const BUSINESS_TYPE_TO_PRODUCT_TYPES = {
@@ -112,8 +114,13 @@ const isAddModalOpen = ref(false)
 const isEditModalOpen = ref(false)
 const editId = ref(null)
 
-const addForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
-const editForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
+const addForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '', customStatus: '', _initStock: '', _cost: '' })
+const editForm = ref({ name: '', sku: '', price: '', type: 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '', customStatus: '', _initStock: '', _cost: '' })
+
+const linkedInventoryItem = computed(() => {
+    if (!editForm.value.inventoryId) return null
+    return inventoryStore.items.find(inv => inv.id === editForm.value.inventoryId) || null
+})
 
 const addImageFile = ref(null)
 const addImagePreview = ref('')
@@ -170,7 +177,7 @@ const deleteCategory = async (idx, formRef) => {
 
 onMounted(loadCategories)
 
-const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '' })
+const emptyForm = () => ({ name: '', sku: '', price: '', type: productTypes.value[0] || 'Stocked', category: 'General', inventoryId: '', rateUnit: 'hour', maxDuration: '', serviceDuration: '', serviceDurationUnit: 'hour', defaultNotes: '', customStatus: '', _initStock: '', _cost: '' })
 
 const openAddModal = () => {
     addForm.value = emptyForm()
@@ -192,7 +199,8 @@ const openEditModal = (product) => {
         maxDuration: product.maxDuration || '',
         serviceDuration: product.serviceDuration || '',
         serviceDurationUnit: product.serviceDurationUnit || 'hour',
-        defaultNotes: product.defaultNotes || ''
+        defaultNotes: product.defaultNotes || '',
+        customStatus: product.customStatus || '',
     }
     editImageFile.value = null
     editImagePreview.value = product.imageUrl || ''
@@ -231,19 +239,25 @@ const handleEditImageUpload = (e) => {
 const handleAddProduct = async () => {
     if (!addForm.value.name || !addForm.value.type || addForm.value.price === '') return
 
-    if ((addForm.value.type === 'Stocked' || addForm.value.type === 'Rental') && !addForm.value.inventoryId) {
-        toastStore.error('Please map this product to an inventory item.')
-        return
-    }
-
-    const formData = { ...addForm.value }
+    const { _initStock, _cost, ...formData } = addForm.value
     const imageFile = addImageFile.value
+    const needsInventory = formData.type === 'Stocked' || formData.type === 'Rental'
     closeAddModal()
 
     const tid = toastStore.loading('Adding product...')
-    let docRef = null
     try {
-        docRef = await productsStore.addProduct(formData)
+        if (needsInventory) {
+            const loggedBy = { name: authStore.user?.full_name, id: authStore.user?.profileId }
+            const { itemRef } = await inventoryStore.addInventoryItem({
+                name: formData.name,
+                sku: formData.sku || '',
+                stock: Number(_initStock) || 0,
+                cost: Number(_cost) || 0,
+                type: formData.type,
+            }, true, loggedBy)
+            formData.inventoryId = itemRef.id
+        }
+        const docRef = await productsStore.addProduct(formData)
         if (imageFile && docRef) await productsStore.uploadProductImage(docRef.id, imageFile)
         toastStore.replace(tid, 'success', 'Product added successfully')
     } catch (err) {
@@ -255,13 +269,9 @@ const handleAddProduct = async () => {
 const handleUpdateProduct = async () => {
     if (!editId.value || !editForm.value.name || !editForm.value.type || editForm.value.price === '') return
 
-    if ((editForm.value.type === 'Stocked' || editForm.value.type === 'Rental') && !editForm.value.inventoryId) {
-        toastStore.error('Please map this product to an inventory item.')
-        return
-    }
-
     const id = editId.value
-    const updates = { ...editForm.value, price: Number(editForm.value.price) || 0 }
+    const { _initStock, _cost, ...rest } = editForm.value
+    const updates = { ...rest, price: Number(rest.price) || 0 }
     const imageFile = editImageFile.value
     closeEditModal()
 
@@ -350,6 +360,9 @@ const handleDelete = async () => {
                         <span class="text-xs text-gray-400 dark:text-gray-500 font-mono tracking-wide">SKU: {{ product.sku || 'N/A' }}</span>
                         <span v-if="product.category" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ product.category }}</span>
                     </div>
+                    <span v-if="product.customStatus" class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      ⚠ {{ product.customStatus }}
+                    </span>
                   </div>
                 </div>
               </td>
@@ -463,9 +476,15 @@ const handleDelete = async () => {
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                        <input v-model="addForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                            <input v-model="addForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Status <span class="text-[10px] font-normal text-gray-400 ml-1">optional</span></label>
+                            <input v-model="addForm.customStatus" type="text" placeholder="e.g. Broken, On Hold…" class="w-full p-3 bg-white dark:bg-gray-700 border border-amber-200 dark:border-amber-800/50 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none text-gray-700 dark:text-white transition-shadow text-sm">
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
@@ -520,12 +539,21 @@ const handleDelete = async () => {
                         </div>
                     </template>
 
-                    <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'">
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
-                        <select v-model="addForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                            <option value="" disabled>-- Select Inventory --</option>
-                            <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
-                        </select>
+                    <div v-if="addForm.type === 'Stocked' || addForm.type === 'Rental'" class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                {{ addForm.type === 'Stocked' ? 'Initial Stock (units)' : 'Units Available' }}
+                            </label>
+                            <input v-model="addForm._initStock" type="number" min="0" placeholder="0"
+                                class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                Cost / Unit ({{ currencySymbol }}) <span class="text-[10px] font-normal text-gray-400 ml-1">for asset tracking</span>
+                            </label>
+                            <input v-model="addForm._cost" type="number" min="0" placeholder="0.00"
+                                class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow" />
+                        </div>
                     </div>
 
                     <div class="pt-2 flex gap-3">
@@ -616,9 +644,15 @@ const handleDelete = async () => {
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                        <input v-model="editForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                            <input v-model="editForm.name" type="text" placeholder="e.g. Premium Coffee Beans" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#004D40] outline-none text-gray-700 dark:text-white transition-shadow">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Status <span class="text-[10px] font-normal text-gray-400 ml-1">optional</span></label>
+                            <input v-model="editForm.customStatus" type="text" placeholder="e.g. Broken, On Hold…" class="w-full p-3 bg-white dark:bg-gray-700 border border-amber-200 dark:border-amber-800/50 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none text-gray-700 dark:text-white transition-shadow text-sm">
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
@@ -647,11 +681,32 @@ const handleDelete = async () => {
                     </div>
 
                     <div v-if="editForm.type === 'Stocked' || editForm.type === 'Rental'">
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Link to Inventory</label>
-                        <select v-model="editForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
-                            <option value="" disabled>-- Select Inventory --</option>
-                            <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
-                        </select>
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Stock</label>
+                        <!-- Already linked: show live stock + manage link -->
+                        <div v-if="editForm.inventoryId" class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                            <div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Current Stock</p>
+                                <p class="font-bold text-gray-800 dark:text-white text-lg leading-none">
+                                    {{ linkedInventoryItem?.stock ?? '—' }}
+                                    <span v-if="editForm.type === 'Rental' && linkedInventoryItem?.rentalStatus"
+                                        :class="linkedInventoryItem.rentalStatus === 'Available' ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'"
+                                        class="text-xs font-bold ml-2">{{ linkedInventoryItem.rentalStatus }}</span>
+                                </p>
+                            </div>
+                            <button type="button" @click="closeEditModal(); router.push('/inventory')"
+                                class="flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 transition-colors">
+                                Manage Stock
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                        <!-- Not yet linked (old product migration): show dropdown -->
+                        <div v-else>
+                            <select v-model="editForm.inventoryId" class="w-full p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700 dark:text-white transition-shadow appearance-none">
+                                <option value="" disabled>-- Select Inventory --</option>
+                                <option v-for="inv in inventoryStore.items" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
+                            </select>
+                            <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">This product was created before auto-linking. Select the matching inventory item.</p>
+                        </div>
                     </div>
 
                     <!-- Service-specific fields -->
@@ -782,6 +837,9 @@ const handleDelete = async () => {
                               <span class="text-xs text-gray-400 dark:text-gray-500 font-mono tracking-wide">SKU: {{ item.sku || 'N/A' }}</span>
                               <span v-if="item.category" class="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{{ item.category }}</span>
                           </div>
+                          <span v-if="item.customStatus" class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            ⚠ {{ item.customStatus }}
+                          </span>
                         </div>
                       </div>
                     </td>
