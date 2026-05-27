@@ -65,17 +65,17 @@ const verifyPin = async () => {
     let businessTypes = []
     let currency = 'RM'
 
-    if (selectedProfile.value.role === 'Owner') {
-      try {
-        const bizSnap = await getDoc(doc(db, 'businesses', bizId))
-        if (bizSnap.exists()) {
+    try {
+      const bizSnap = await getDoc(doc(db, 'businesses', bizId))
+      if (bizSnap.exists()) {
+        currency = bizSnap.data().currency || 'RM'
+        if (selectedProfile.value.role === 'Owner') {
           onboardingCompleted = bizSnap.data().onboardingCompleted ?? true
           businessTypes = bizSnap.data().businessTypes || []
-          currency = bizSnap.data().currency || 'RM'
         }
-      } catch (err) {
-        console.error('Failed to fetch business flags:', err)
       }
+    } catch (err) {
+      console.error('Failed to fetch business flags:', err)
     }
 
     authStore.setUser({
