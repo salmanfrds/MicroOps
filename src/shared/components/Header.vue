@@ -6,6 +6,7 @@ import { useAuth } from '../../modules/auth/composables/useAuth'
 import { useChatStore } from '../stores/chat'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebaseClient'
+import { useDarkMode } from '../composables/useDarkMode'
 
 const emit = defineEmits(['toggle-chat'])
 
@@ -30,7 +31,7 @@ watch(() => authStore.user?.businessId, async (bizId) => {
 
 const isOpen = ref(false)
 const dropdownRef = ref(null)
-const isDark = ref(false)
+const { isDark, toggleDarkMode } = useDarkMode()
 
 // --- CURRENT USER PROFILE ---
 const currentUser = computed(() => authStore.user || { full_name: 'Guest', role: 'Unknown' })
@@ -38,29 +39,7 @@ const userInitial = computed(() => {
   return currentUser.value.full_name ? currentUser.value.full_name.charAt(0).toUpperCase() : 'U'
 })
 
-// --- THEME TOGGLE LOGIC ---
-const toggleDarkMode = () => {
-  isDark.value = !isDark.value
-  
-  if (isDark.value) {
-    document.documentElement.classList.add('dark')
-    localStorage.setItem('theme', 'dark')
-  } else {
-    document.documentElement.classList.remove('dark')
-    localStorage.setItem('theme', 'light')
-  }
-}
-
-// Check local storage or system preference on load
 onMounted(() => {
-  const savedTheme = localStorage.getItem('theme')
-  const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  
-  if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
-  
   document.addEventListener('click', handleClickOutside)
 })
 

@@ -10,6 +10,7 @@ import { useCurrencyStore, CURRENCY_CONFIG } from './shared/stores/currency';
 import { useAuthStore } from './modules/auth/stores/auth';
 import { useChatStore } from './shared/stores/chat';
 import { useAuth } from './modules/auth/composables/useAuth';
+import { useDarkMode } from './shared/composables/useDarkMode';
 
 const isSidebarExpanded = ref(true)
 const isMobileMenuOpen = ref(false)
@@ -29,26 +30,10 @@ const currencyStore = useCurrencyStore()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 
-const isDark = ref(false)
-
-const toggleDarkMode = () => {
-  isDark.value = !isDark.value
-  if (isDark.value) {
-    document.documentElement.classList.add('dark')
-    localStorage.setItem('theme', 'dark')
-  } else {
-    document.documentElement.classList.remove('dark')
-    localStorage.setItem('theme', 'light')
-  }
-}
+const { isDark, toggleDarkMode, init: initDarkMode } = useDarkMode()
 
 onMounted(() => {
-  const saved = localStorage.getItem('theme')
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  if (saved === 'dark' || (!saved && prefersDark)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
+  initDarkMode()
 })
 
 const isMobileDropdownOpen = ref(false)
