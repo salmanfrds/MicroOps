@@ -9,6 +9,7 @@ import { useDiscountsStore } from '../../customer/stores/discounts'
 import { useAuthStore } from '../../auth/stores/auth'
 import { useToastStore } from '../../../shared/stores/toast'
 import { useCurrency } from '../../../shared/composables/useCurrency'
+import { jsPDF } from 'jspdf'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../../../shared/lib/firebaseClient'
 
@@ -22,6 +23,7 @@ const toastStore = useToastStore()
 const { fmt: fmtMoney, symbol: currencySymbol } = useCurrency()
 
 const duitnowQrUrl = ref('')
+const duitnowAccountName = ref('')
 
 onMounted(async () => {
   const bizId = authStore.user?.businessId
@@ -30,7 +32,10 @@ onMounted(async () => {
     getDoc(doc(db, 'businesses', bizId)),
     getDoc(doc(db, 'businesses', bizId, 'settings', 'products')),
   ])
-  if (bizSnap.exists()) duitnowQrUrl.value = bizSnap.data().duitnowQrUrl || ''
+  if (bizSnap.exists()) {
+    duitnowQrUrl.value = bizSnap.data().duitnowQrUrl || ''
+    duitnowAccountName.value = bizSnap.data().accountName || ''
+  }
   if (prodSnap.exists() && Array.isArray(prodSnap.data().categories)) {
     productCategoriesSales.value = prodSnap.data().categories
   }
@@ -458,7 +463,169 @@ const handleProceedToPayment = () => {
 }
 
 const printReceipt = () => {
-  window.print()
+  const data = receiptData.value
+  const W = 80
+  const margin = 6
+  const contentW = W - margin * 2
+
+  // Estimate page height: header(32) + items(~12 each) + totals(~35) + footer(15)
+  const itemCount = (data.items || []).length
+  const estimatedH = 32 + itemCount * 14 + 55 + 20
+  const pageH = Math.max(estimatedH, 120)
+
+  const pdf = new jsPDF({ unit: 'mm', format: [W, pageH], orientation: 'portrait' })
+  let y = 6
+
+  // ── Header ──
+  pdf.setFillColor(0, 77, 64)
+  pdf.rect(0, 0, W, 28, 'F')
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(6)
+  pdf.setTextColor(150, 210, 195)
+  pdf.text('RECEIPT', W / 2, y + 2, { align: 'center' })
+
+  pdf.setFontSize(13)
+  pdf.setTextColor(255, 255, 255)
+  pdf.text('MicroOps', W / 2, y + 9, { align: 'center' })
+
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(6.5)
+  pdf.setTextColor(150, 210, 195)
+  pdf.text(data.date || '', W / 2, y + 15, { align: 'center' })
+
+  const rawId = data.id && data.id !== '—' ? data.id : ''
+  const shortId = rawId ? rawId.slice(-8).toUpperCase() : ''
+  if (shortId) pdf.text(`#${shortId}`, W / 2, y + 20, { align: 'center' })
+
+  // Status pill (top-right of header)
+  const status = data.paymentStatus === 'Partial' ? 'PARTIAL' : 'PAID'
+  const isPartial = data.paymentStatus === 'Partial'
+  pdf.setFillColor(isPartial ? 251 : 52, isPartial ? 191 : 211, isPartial ? 36 : 153)
+  pdf.rect(W - margin - 14, 3, 14, 5, 'F')
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(5.5)
+  pdf.setTextColor(30, 30, 30)
+  pdf.text(status, W - margin - 7, 6.5, { align: 'center' })
+
+  y = 32
+
+  // ── Divider ──
+  pdf.setDrawColor(200, 200, 200)
+  pdf.line(margin, y, W - margin, y)
+  y += 5
+
+  // ── Items ──
+  for (const item of (data.items || [])) {
+    const price = item.subtotal ?? (item.price || 0) * (item.qty || 0)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8)
+    pdf.setTextColor(30, 30, 30)
+    const nameLines = pdf.splitTextToSize(item.name, contentW - 20)
+    pdf.text(nameLines, margin, y)
+    pdf.text(fmtMoney(price), W - margin, y, { align: 'right' })
+    y += nameLines.length * 4.5
+
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(6.5)
+
+    if (item.isRental) {
+      pdf.setTextColor(160, 110, 0)
+      pdf.text(`${item.duration} ${item.rateUnit}${item.duration > 1 ? 's' : ''} × ${fmtMoney(item.price)}/${item.rateUnit}`, margin, y)
+      y += 4
+    } else if (item.isService) {
+      pdf.setTextColor(100, 60, 160)
+      if (item.estimatedDuration) { pdf.text(`Est. ${item.estimatedDuration}`, margin, y); y += 3.5 }
+      if (item.scheduledAt) {
+        const d = new Date(item.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+        pdf.text(`Scheduled: ${d}`, margin, y); y += 3.5
+      }
+    } else {
+      pdf.setTextColor(120, 120, 120)
+      pdf.text(`x${item.qty} × ${fmtMoney(item.price)}`, margin, y)
+      y += 4
+    }
+
+    if (item.productDiscount) {
+      pdf.setTextColor(160, 160, 160)
+      pdf.setFontSize(6)
+      pdf.text(`was ${fmtMoney(item.rawSubtotal ?? 0)}`, W - margin, y - 3.5, { align: 'right' })
+    }
+
+    pdf.setTextColor(30, 30, 30)
+    y += 2
+  }
+
+  y += 2
+  pdf.setDrawColor(200, 200, 200)
+  pdf.line(margin, y, W - margin, y)
+  y += 4
+
+  // ── Totals ──
+  const line = (label, value, bold = false, r = 80, g = 80, b = 80) => {
+    pdf.setFont('helvetica', bold ? 'bold' : 'normal')
+    pdf.setFontSize(bold ? 9 : 7.5)
+    pdf.setTextColor(r, g, b)
+    pdf.text(label, margin, y)
+    pdf.text(value, W - margin, y, { align: 'right' })
+    y += bold ? 5.5 : 4.5
+  }
+
+  line('Subtotal', fmtMoney(data.subtotal))
+  if ((data.lineDiscountsTotal || 0) > 0)
+    line('Item Discounts', `-${fmtMoney(data.lineDiscountsTotal)}`, false, 5, 140, 90)
+  if ((data.discountAmount || 0) > 0)
+    line(`Order Discount (${data.discountName})`, `-${fmtMoney(data.discountAmount)}`, false, 5, 140, 90)
+
+  pdf.setDrawColor(180, 180, 180)
+  pdf.line(margin, y, W - margin, y); y += 3
+  line('Total', fmtMoney(data.total))
+  pdf.line(margin, y, W - margin, y); y += 3
+  line('Paid Now', fmtMoney(data.paidAmount), true, 0, 77, 64)
+
+  if ((data.remainingAmount || 0) > 0) {
+    y += 2
+    pdf.setFillColor(255, 243, 205)
+    pdf.rect(margin, y, contentW, 7, 'F')
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(8)
+    pdf.setTextColor(140, 80, 0)
+    pdf.text('Balance Due', margin + 2, y + 5)
+    pdf.text(fmtMoney(data.remainingAmount), W - margin - 2, y + 5, { align: 'right' })
+    y += 10
+  }
+
+  // ── Service / completion notes ──
+  const order = selectedOrder.value
+  if (order?.serviceNotes || order?.completionNote) {
+    y += 2
+    pdf.setDrawColor(200, 200, 200)
+    pdf.line(margin, y, W - margin, y); y += 4
+    if (order.serviceNotes) {
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(6); pdf.setTextColor(100, 50, 160)
+      pdf.text('SERVICE NOTES', margin, y); y += 3.5
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(60, 60, 60)
+      const ls = pdf.splitTextToSize(order.serviceNotes, contentW)
+      pdf.text(ls, margin, y); y += ls.length * 3.5 + 2
+    }
+    if (order.completionNote) {
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(6); pdf.setTextColor(0, 100, 80)
+      pdf.text('COMPLETION NOTE', margin, y); y += 3.5
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(60, 60, 60)
+      const ls = pdf.splitTextToSize(order.completionNote, contentW)
+      pdf.text(ls, margin, y); y += ls.length * 3.5 + 2
+    }
+  }
+
+  // ── Footer ──
+  y += 4
+  pdf.setDrawColor(200, 200, 200)
+  pdf.line(margin, y, W - margin, y); y += 5
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(160, 160, 160)
+  pdf.text('Thank you for your purchase!', W / 2, y, { align: 'center' })
+
+  const filename = shortId ? `receipt-${shortId}.pdf` : 'receipt.pdf'
+  pdf.save(filename)
 }
 
 const shareReceipt = async () => {
@@ -970,116 +1137,166 @@ const receiptData = computed(() => {
           </div>
 
           <!-- Step 2: Payment Waiting State (DuitNow / Card) -->
-          <div v-if="currentStep === 2" class="p-12 flex flex-col items-center justify-center h-full bg-gray-50 dark:bg-gray-900/50 overflow-y-auto">
-            <h4 class="text-2xl font-black text-gray-800 dark:text-white tracking-tight mb-2">Awaiting Payment</h4>
-            <p class="text-gray-500 dark:text-gray-400 mb-1 font-medium">
-              Amount Due Now: <span class="text-gray-900 dark:text-white font-bold text-xl">{{ fmtMoney(amountDueNow) }}</span>
+          <div v-if="currentStep === 2" class="p-5 flex flex-col items-center justify-center flex-1 min-h-0 bg-gray-50 dark:bg-gray-900/50">
+            <h4 class="text-xl font-black text-gray-800 dark:text-white tracking-tight mb-1">Awaiting Payment</h4>
+            <p class="text-gray-500 dark:text-gray-400 mb-1 font-medium text-sm">
+              Amount Due Now: <span class="text-gray-900 dark:text-white font-bold text-lg">{{ fmtMoney(amountDueNow) }}</span>
             </p>
-            <p v-if="partialPaymentEnabled && canUsePartialPayment" class="text-amber-600 dark:text-amber-400 text-sm font-medium mb-8">
+            <p v-if="partialPaymentEnabled && canUsePartialPayment" class="text-amber-600 dark:text-amber-400 text-xs font-medium mb-3">
               Balance {{ fmtMoney(remainingBalance) }} to be collected on return
             </p>
-            <p v-else class="mb-8"></p>
-            
-            <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center max-w-sm w-full">
+            <p v-else class="mb-3"></p>
+
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center max-w-sm w-full">
               <!-- DuitNow State -->
               <template v-if="selectedPaymentMethod === 'DuitNow'">
-                <div class="w-full aspect-square bg-gray-50 dark:bg-gray-900 rounded-xl mb-6 p-4 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-700">
+                <div class="w-52 h-52 bg-gray-50 dark:bg-gray-900 rounded-xl mb-3 p-3 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-700 shrink-0">
                   <img v-if="duitnowQrUrl" :src="duitnowQrUrl" class="w-full h-full object-contain" alt="DuitNow QR" />
                   <div v-else class="text-center text-gray-400 text-sm font-bold">No QR Code uploaded</div>
                 </div>
-                <p class="text-gray-600 dark:text-gray-300 text-sm font-medium mb-6 text-center">Please ask the customer to scan the DuitNow QR above.</p>
+                <p class="text-gray-600 dark:text-gray-300 text-xs font-medium mb-1 text-center">Please ask the customer to scan the DuitNow QR above.</p>
+                <p v-if="duitnowAccountName" class="text-gray-800 dark:text-white text-sm font-bold mb-4 text-center">{{ duitnowAccountName }}</p>
+                <p v-else class="mb-4"></p>
               </template>
-              
+
               <!-- Card State -->
               <template v-if="selectedPaymentMethod === 'Card'">
-                <div class="w-32 h-32 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-6 animate-pulse">
-                  <svg class="w-16 h-16 text-indigo-500 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div class="w-24 h-24 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-3 animate-pulse shrink-0">
+                  <svg class="w-12 h-12 text-indigo-500 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                   </svg>
                 </div>
-                <p class="text-gray-600 dark:text-gray-300 text-sm font-medium mb-6 text-center">Please tap or insert the card into the payment terminal.</p>
+                <p class="text-gray-600 dark:text-gray-300 text-xs font-medium mb-4 text-center">Please tap or insert the card into the payment terminal.</p>
               </template>
-              
+
               <button @click="confirmPayment" :disabled="isSubmitting"
-                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-60 text-lg">
+                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-60 text-base">
                 {{ isSubmitting ? 'Processing...' : 'Payment Received' }}
               </button>
-              
+
               <button @click="currentStep = 1" :disabled="isSubmitting"
-                class="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                class="mt-3 text-sm font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                 Cancel / Change Method
               </button>
             </div>
           </div>
 
           <!-- Step 3: Receipt -->
-          <div v-if="currentStep === 3" class="p-8 bg-gray-50 dark:bg-gray-900/50">
-            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 shadow-sm relative">
-              <div class="absolute -top-3 -right-3 text-[10px] font-bold px-3 py-1 rounded-full shadow"
-                :class="receiptData.paymentStatus === 'Partial' ? 'bg-amber-500 text-white' : 'bg-green-500 text-white'">
-                {{ receiptData.paymentStatus === 'Partial' ? 'PARTIAL' : 'PAID' }}
-              </div>
-              <div class="text-center mb-6">
-                <h2 class="text-xl font-black text-gray-800 dark:text-white tracking-tight">MicroOps</h2>
-                <p class="text-[10px] text-gray-400">Order {{ receiptData.id }} • {{ receiptData.date }}</p>
-              </div>
-              <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300 mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
-                <div v-for="(item, idx) in receiptData.items" :key="idx" class="flex justify-between">
-                  <span>{{ item.name }} (x{{ item.qty }})</span>
-                  <div class="text-right">
-                    <div v-if="item.productDiscount" class="text-[10px] text-gray-400 line-through">{{ fmtMoney(item.rawSubtotal ?? (item.price || 0) * (item.qty || 0)) }}</div>
-                    <div>{{ fmtMoney(item.subtotal ?? (item.price || 0) * (item.qty || 0)) }}</div>
+          <div v-if="currentStep === 3" class="flex flex-col flex-1 min-h-0 bg-gray-100 dark:bg-gray-900">
+            <!-- Scrollable receipt area -->
+            <div class="flex-1 overflow-y-auto p-5">
+              <!-- Receipt card -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden max-w-sm mx-auto">
+
+                <!-- Header band -->
+                <div class="bg-[#004D40] px-6 pt-6 pb-8 text-center relative">
+                  <span class="absolute top-4 right-4 text-[10px] font-black px-2.5 py-1 rounded-full"
+                    :class="receiptData.paymentStatus === 'Partial' ? 'bg-amber-400 text-amber-900' : 'bg-emerald-400 text-emerald-900'">
+                    {{ receiptData.paymentStatus === 'Partial' ? 'PARTIAL' : 'PAID' }}
+                  </span>
+                  <p class="text-[10px] font-bold text-teal-300 uppercase tracking-widest mb-1">Receipt</p>
+                  <h2 class="text-2xl font-black text-white tracking-tight">MicroOps</h2>
+                  <p class="text-teal-300 text-[11px] mt-1">{{ receiptData.date }}</p>
+                  <p class="text-teal-400 text-[10px] mt-0.5 font-mono">{{ receiptData.id ? `#${receiptData.id.slice(-8).toUpperCase()}` : '' }}</p>
+                </div>
+
+                <!-- Scallop edge -->
+                <div class="flex">
+                  <div class="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-900/60 -mt-2 -ml-2 shrink-0"></div>
+                  <div class="flex-1 border-t-2 border-dashed border-gray-200 dark:border-gray-700 mt-0"></div>
+                  <div class="w-4 h-4 rounded-full bg-gray-100 dark:bg-gray-900/60 -mt-2 -mr-2 shrink-0"></div>
+                </div>
+
+                <!-- Items -->
+                <div class="px-6 py-4 space-y-3">
+                  <div v-for="(item, idx) in receiptData.items" :key="idx">
+                    <div class="flex justify-between items-start gap-2">
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-gray-800 dark:text-white leading-tight">{{ item.name }}</p>
+                        <!-- Rental meta -->
+                        <p v-if="item.isRental" class="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                          {{ item.duration }} {{ item.rateUnit }}{{ item.duration > 1 ? 's' : '' }} × {{ fmtMoney(item.price) }}/{{ item.rateUnit }}
+                        </p>
+                        <!-- Service meta -->
+                        <template v-else-if="item.isService">
+                          <p v-if="item.estimatedDuration" class="text-[11px] text-violet-600 dark:text-violet-400 mt-0.5">Est. {{ item.estimatedDuration }}</p>
+                          <p v-if="item.scheduledAt" class="text-[11px] text-gray-400 mt-0.5">Scheduled: {{ new Date(item.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }}</p>
+                        </template>
+                        <!-- Regular qty -->
+                        <p v-else class="text-[11px] text-gray-400 mt-0.5">x{{ item.qty }} × {{ fmtMoney(item.price) }}</p>
+                      </div>
+                      <div class="text-right shrink-0">
+                        <p v-if="item.productDiscount" class="text-[10px] text-gray-400 line-through">{{ fmtMoney(item.rawSubtotal ?? (item.price || 0) * (item.qty || 0)) }}</p>
+                        <p class="text-sm font-bold text-gray-800 dark:text-white">{{ fmtMoney(item.subtotal ?? (item.price || 0) * (item.qty || 0)) }}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="!receiptData.items?.length" class="text-center italic text-gray-400 text-sm py-2">No items</div>
+                </div>
+
+                <!-- Divider -->
+                <div class="mx-6 border-t border-dashed border-gray-200 dark:border-gray-700"></div>
+
+                <!-- Totals -->
+                <div class="px-6 py-4 space-y-2">
+                  <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+                    <span>Subtotal</span><span>{{ fmtMoney(receiptData.subtotal) }}</span>
+                  </div>
+                  <div v-if="receiptData.lineDiscountsTotal > 0" class="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <span>Item Discounts</span><span>-{{ fmtMoney(receiptData.lineDiscountsTotal) }}</span>
+                  </div>
+                  <div v-if="receiptData.discountAmount > 0" class="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <span>Order Discount ({{ receiptData.discountName }})</span><span>-{{ fmtMoney(receiptData.discountAmount) }}</span>
+                  </div>
+                  <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-100 dark:border-gray-700">
+                    <span>Total</span><span>{{ fmtMoney(receiptData.total) }}</span>
+                  </div>
+                  <div class="flex justify-between text-base font-black text-gray-900 dark:text-white pt-1 border-t border-gray-200 dark:border-gray-600">
+                    <span>Paid Now</span><span>{{ fmtMoney(receiptData.paidAmount) }}</span>
+                  </div>
+                  <div v-if="receiptData.remainingAmount > 0" class="flex justify-between text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-lg mt-1">
+                    <span>Balance Due</span><span>{{ fmtMoney(receiptData.remainingAmount) }}</span>
                   </div>
                 </div>
-                <div v-if="!receiptData.items?.length" class="text-center italic text-gray-400">No items</div>
-              </div>
-              <div class="space-y-1.5">
-                <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-                  <span>Subtotal</span><span>{{ fmtMoney(receiptData.subtotal) }}</span>
+
+                <!-- Service / completion notes -->
+                <template v-if="isViewMode && (selectedOrder?.serviceNotes || selectedOrder?.completionNote)">
+                  <div class="mx-6 border-t border-dashed border-gray-200 dark:border-gray-700"></div>
+                  <div class="px-6 py-3 space-y-2">
+                    <div v-if="selectedOrder?.serviceNotes">
+                      <p class="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest mb-0.5">Service Notes</p>
+                      <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedOrder.serviceNotes }}</p>
+                    </div>
+                    <div v-if="selectedOrder?.completionNote">
+                      <p class="text-[10px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest mb-0.5">Completion Note</p>
+                      <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedOrder.completionNote }}</p>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Footer -->
+                <div class="px-6 py-4 bg-gray-50 dark:bg-gray-700/30 text-center">
+                  <p class="text-[10px] text-gray-400 dark:text-gray-500">Thank you for your purchase!</p>
                 </div>
-                <div v-if="receiptData.lineDiscountsTotal > 0" class="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-bold">
-                  <span>Item Discounts</span><span>-{{ fmtMoney(receiptData.lineDiscountsTotal) }}</span>
-                </div>
-                <div v-if="receiptData.discountAmount > 0" class="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-bold">
-                  <span>Order Discount ({{ receiptData.discountName }})</span><span>-{{ fmtMoney(receiptData.discountAmount) }}</span>
-                </div>
-                <div class="flex justify-between text-sm text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-1">
-                  <span>Total</span><span>{{ fmtMoney(receiptData.total) }}</span>
-                </div>
-                <div class="flex justify-between font-bold text-base text-gray-800 dark:text-white border-t border-gray-100 dark:border-gray-700 pt-1">
-                  <span>Paid Now</span><span>{{ fmtMoney(receiptData.paidAmount) }}</span>
-                </div>
-                <div v-if="receiptData.remainingAmount > 0" class="flex justify-between text-amber-600 dark:text-amber-400 font-bold text-sm">
-                  <span>Balance Due</span><span>{{ fmtMoney(receiptData.remainingAmount) }}</span>
-                </div>
-              </div>
-              <div v-if="isViewMode && selectedOrder?.serviceNotes" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                <p class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide mb-1">Service Notes</p>
-                <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedOrder.serviceNotes }}</p>
-              </div>
-              <div v-if="isViewMode && selectedOrder?.completionNote" class="mt-2">
-                <p class="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wide mb-1">Completion Note</p>
-                <p class="text-xs text-gray-600 dark:text-gray-300">{{ selectedOrder.completionNote }}</p>
               </div>
             </div>
-            
-            <!-- Receipt Actions -->
-            <div class="mt-6 flex flex-col gap-3 max-w-sm mx-auto w-full">
-              <div class="flex gap-3">
+
+            <!-- Actions — pinned to bottom -->
+            <div class="shrink-0 px-5 pb-5 pt-3 flex flex-col gap-2 max-w-sm mx-auto w-full">
+              <div class="flex gap-2">
                 <button @click="printReceipt"
-                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                  Print
+                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 text-sm">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                  Export PDF
                 </button>
                 <button @click="shareReceipt"
-                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                  class="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 text-sm">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
                   Share
                 </button>
               </div>
-              
               <button @click="closeModal"
-                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-lg shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors mt-2 text-lg">
+                class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-colors text-base">
                 Done
               </button>
             </div>

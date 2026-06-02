@@ -66,7 +66,12 @@ export function useAuth() {
       }
       return true
     } catch (err) {
-      error.value = err.message
+      const code = err.code || ''
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-email') {
+        error.value = 'Incorrect email or password.'
+      } else {
+        error.value = err.message
+      }
       return false
     } finally {
       loading.value = false

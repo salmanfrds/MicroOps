@@ -48,19 +48,19 @@ const routes = [
         path: '/inventory',
         name: 'Inventory',
         component: Inventory,
-        meta: { requireAuth: true, roles: ['Owner', 'Manager', 'Inventory Manager'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager'] }
     },
     {
         path: '/products',
         name: 'Products',
         component: Products,
-        meta: { requireAuth: true, roles: ['Owner', 'Manager', 'Inventory Manager', 'Cashier'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Inventory Manager', 'Cashier'] }
     },
     {
         path: '/customer',
         name: 'Customer',
         component: Customer,
-        meta: { requireAuth: true, roles: ['Owner', 'Cashier'] }
+        meta: { requireAuth: true, roles: ['Owner'] }
     },
     {
         path: '/discounts',

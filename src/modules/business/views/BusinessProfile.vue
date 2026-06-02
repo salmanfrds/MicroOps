@@ -13,7 +13,7 @@ const currencyStore = useCurrencyStore()
 
 const business = ref({
   name: '', address: '', phone: '', website: '',
-  bankName: '', accountNumber: '', duitnowId: '',
+  bankName: '', accountNumber: '', accountName: '', duitnowId: '',
   logoUrl: '', duitnowQrUrl: ''
 })
 
@@ -66,6 +66,7 @@ const loadProfile = async () => {
         website: data.website || '',
         bankName: data.bankName || '',
         accountNumber: data.accountNumber || '',
+        accountName: data.accountName || '',
         duitnowId: data.duitnowId || '',
         logoUrl: data.logoUrl || '',
         duitnowQrUrl: data.duitnowQrUrl || ''
@@ -96,6 +97,7 @@ const saveProfile = async () => {
       website: business.value.website,
       bankName: business.value.bankName,
       accountNumber: business.value.accountNumber,
+      accountName: business.value.accountName,
       duitnowId: business.value.duitnowId,
       logoUrl: business.value.logoUrl,
       duitnowQrUrl: business.value.duitnowQrUrl,
@@ -367,6 +369,11 @@ onMounted(async () => {
             <div>
               <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Account Number</label>
               <input v-model="business.accountNumber" type="text" placeholder="e.g. 1642..."
+                class="w-full p-2 bg-transparent border-b border-gray-300 dark:border-gray-600 focus:border-[#4DB6AC] outline-none text-gray-800 dark:text-white placeholder-gray-400 transition-colors" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Account Name</label>
+              <input v-model="business.accountName" type="text" placeholder="e.g. Kedai Makan Sdn Bhd"
                 class="w-full p-2 bg-transparent border-b border-gray-300 dark:border-gray-600 focus:border-[#4DB6AC] outline-none text-gray-800 dark:text-white placeholder-gray-400 transition-colors" />
             </div>
             <div class="md:col-span-2">

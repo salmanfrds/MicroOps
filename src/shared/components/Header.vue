@@ -173,7 +173,7 @@ const handleClickOutside = (event) => {
             </button>
           </li>
           
-          <li v-if="currentUser.role === 'Owner'">
+          <li v-if="currentUser.role === 'Owner' || currentUser.role === 'Manager'">
             <button @click="navigateTo('/business')"
               class="w-full text-left px-4 py-3 hover:bg-teal-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm flex items-center gap-3 transition-colors">
               <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

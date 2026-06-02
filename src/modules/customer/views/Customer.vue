@@ -69,6 +69,7 @@ const addForm = ref(emptyAdd())
 const addDocFile = ref(null)
 const addDocPreview = ref('')
 const addDocInput = ref(null)
+const addSaving = ref(false)
 
 const handleAddDocSelect = (e) => {
     const file = e.target.files[0]
@@ -89,7 +90,9 @@ const closeAddModal = () => { isAddModalOpen.value = false }
 
 // --- CRUD ---
 const handleAddCustomer = async () => {
-    if (!addForm.value.name || !addForm.value.email) return
+    if (!addForm.value.name || !addForm.value.phone) return
+    if (addSaving.value) return
+    addSaving.value = true
     const tid = toastStore.loading('Adding customer...')
     try {
         const newId = await customersStore.addCustomer(addForm.value)
@@ -111,6 +114,8 @@ const handleAddCustomer = async () => {
     } catch (err) {
         console.error(err)
         toastStore.replace(tid, 'error', 'Failed to add customer. Please try again.')
+    } finally {
+        addSaving.value = false
     }
 }
 
@@ -226,18 +231,18 @@ const handleAddCustomer = async () => {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Email Address</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                           <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                        </div>
-                        <input v-model="addForm.email" type="email" placeholder="sarah@example.com" class="w-full pl-10 p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-[#4DB6AC] outline-none transition-all text-gray-800 dark:text-white">
-                    </div>
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Phone Number</label>
+                    <input v-model="addForm.phone" type="tel" placeholder="+60 12-345 6789" class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-[#4DB6AC] outline-none transition-all text-gray-800 dark:text-white">
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Phone (Optional)</label>
-                        <input v-model="addForm.phone" type="tel" placeholder="+60 12-345 6789" class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-[#4DB6AC] outline-none transition-all text-gray-800 dark:text-white">
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Email Address (Optional)</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                               <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                            </div>
+                            <input v-model="addForm.email" type="email" placeholder="sarah@example.com" class="w-full pl-10 p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-[#4DB6AC] outline-none transition-all text-gray-800 dark:text-white">
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">IC Number (Optional)</label>
@@ -272,7 +277,7 @@ const handleAddCustomer = async () => {
 
                 <div class="pt-2 flex gap-3">
                     <button @click="closeAddModal" class="flex-1 py-3 px-4 rounded-lg text-gray-500 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                    <button @click="handleAddCustomer" class="flex-1 py-3 px-4 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all">Add Profile</button>
+                    <button @click="handleAddCustomer" :disabled="addSaving" class="flex-1 py-3 px-4 rounded-lg bg-[#004D40] dark:bg-teal-700 text-white font-bold shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed">{{ addSaving ? 'Adding...' : 'Add Profile' }}</button>
                 </div>
             </div>
         </div>
