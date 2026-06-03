@@ -24,7 +24,7 @@ export const useSalesStore = defineStore('sales', () => {
 
     const createOrder = async ({ customerName, customerId, items, paymentMethod, partialPayment, serviceNotes, discount, subtotalRaw, lineDiscountsTotal }) => {
         const bizId = getBizId()
-        const subtotal = items.reduce((acc, i) => acc + (i.subtotal || i.price * i.qty), 0)
+        const subtotal = items.reduce((acc, i) => acc + (i.subtotal != null ? i.subtotal : i.price * i.qty), 0)
         const discountAmount = discount?.amount || 0
         const total = Math.max(0, subtotal - discountAmount)
         const orderNumber = `#${Date.now().toString().slice(-5)}`

@@ -113,7 +113,7 @@ export function useDashboardAnalytics() {
             .forEach(o => {
                 ;(o.items || []).forEach(item => {
                     const key = item.name || 'Unknown'
-                    map[key] = (map[key] || 0) + (item.subtotal || item.price * item.qty || 0)
+                    map[key] = (map[key] || 0) + (item.subtotal != null ? item.subtotal : (item.price * item.qty || 0))
                 })
             })
         const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5)

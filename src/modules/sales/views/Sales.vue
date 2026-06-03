@@ -1128,7 +1128,7 @@ const receiptData = computed(() => {
                   </div>
                 </div>
 
-                <button @click="handleProceedToPayment" :disabled="cartTotal === 0 || isSubmitting"
+                <button @click="handleProceedToPayment" :disabled="cartItems.length === 0 || isSubmitting"
                   class="w-full bg-[#004D40] dark:bg-teal-700 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-[#00695C] dark:hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm">
                   {{ selectedPaymentMethod === 'Cash' ? (isSubmitting ? 'Processing...' : 'Confirm Payment') : 'Proceed to Payment' }}
                 </button>
