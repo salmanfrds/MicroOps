@@ -60,7 +60,7 @@ const routes = [
         path: '/customer',
         name: 'Customer',
         component: Customer,
-        meta: { requireAuth: true, roles: ['Owner'] }
+        meta: { requireAuth: true, roles: ['Owner', 'Cashier'] }
     },
     {
         path: '/discounts',

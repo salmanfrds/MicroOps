@@ -21,7 +21,7 @@ const allNavItems = [
   { name: 'Sales & Orders', path: '/sales',   icon: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z', roles: ['Owner', 'Cashier'] },
   { name: 'Inventory',    path: '/inventory', icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4', roles: ['Owner', 'Inventory Manager'] },
   { name: 'Products',     path: '/products',  icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z', roles: ['Owner', 'Inventory Manager', 'Cashier'] },
-  { name: 'Customers',   path: '/customer',  icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1a6 6 0 00-5.197-5.975', roles: ['Owner'] },
+  { name: 'Customers',   path: '/customer',  icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1a6 6 0 00-5.197-5.975', roles: ['Owner', 'Cashier'] },
   { name: 'Discounts',   path: '/discounts', icon: 'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z', roles: ['Owner', 'Manager', 'Cashier'] },
 ]
 
